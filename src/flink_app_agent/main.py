@@ -1,53 +1,87 @@
-"""CLI entry point for flink-app-agent."""
+"""Command-line entry point for the first version of flink-app-agent."""
 
 from __future__ import annotations
 
 import argparse
+import json
+import sys
 from pathlib import Path
 
 from .generator import ProjectGenerator
-from .llm import StubLLMClient
+from .llm import SpecParsingError, StubSpecExtractor, load_prompt
 from .spec import FlinkJobSpec
-from .utils import load_prompt
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Create the CLI argument parser."""
+    """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
-        description="Generate a small Flink project from a natural-language request."
+        description="Parse a Flink job request and generate a local Flink project.",
     )
     parser.add_argument(
         "--request",
         required=True,
-        help="Plain-English description of the Flink job to generate.",
+        help="Plain-English Flink job request to parse.",
     )
     parser.add_argument(
+        "--output",
         "--output-dir",
+        dest="output",
         required=True,
-        help="Directory where the generated project should be created.",
+        help="Directory where the generated project should be written.",
     )
     return parser
 
 
-def main() -> None:
-    """Run the CLI flow."""
+def main(argv: list[str] | None = None) -> int:
+    """Run the CLI and return a process exit code."""
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    package_root = Path(__file__).resolve().parents[2]
-    prompts_dir = package_root / "src" / "flink_app_agent" / "prompts"
-    templates_dir = package_root / "templates"
+    try:
+        spec = parse_request(args.request)
+        print_parsed_spec(spec)
 
-    extract_prompt = load_prompt(prompts_dir / "extract_spec.md")
-    llm_client = StubLLMClient()
-    raw_payload = llm_client.extract_spec(prompt=extract_prompt, request=args.request)
-    spec = FlinkJobSpec.from_llm_payload(raw_payload)
+        generated_files = generate_project(spec, Path(args.output))
+        print_success_summary(spec, Path(args.output), generated_files)
+    except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Unexpected error: {exc}", file=sys.stderr)
+        return 1
 
-    generator = ProjectGenerator(template_root=templates_dir)
-    project_dir = generator.generate(spec=spec, output_dir=Path(args.output_dir))
+    return 0
 
-    print(f"Generated project at: {project_dir}")
+
+def parse_request(request: str) -> FlinkJobSpec:
+    """Parse a natural-language request into a validated ``FlinkJobSpec``."""
+    extract_prompt = load_prompt("extract_spec.md")
+    extractor = StubSpecExtractor()
+    return extractor.extract_spec(request=request, prompt=extract_prompt)
+
+
+def generate_project(spec: FlinkJobSpec, output_dir: Path) -> list[Path]:
+    """Generate the Flink project from the local template directory."""
+    template_dir = Path(__file__).resolve().parents[2] / "templates" / "flink_kafka_rule_job"
+    generator = ProjectGenerator(template_dir=template_dir)
+    return generator.generate(spec=spec, output_dir=output_dir)
+
+
+def print_parsed_spec(spec: FlinkJobSpec) -> None:
+    """Print the parsed spec before generation starts."""
+    print("Parsed spec:")
+    print(json.dumps(spec.model_dump(), indent=2))
+    print()
+
+
+def print_success_summary(spec: FlinkJobSpec, output_dir: Path, generated_files: list[Path]) -> None:
+    """Print a small success summary including generated files."""
+    del spec
+    print(f"Generated project in: {output_dir}")
+    print("Generated files:")
+    for path in generated_files:
+        print(f"- {path}")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
