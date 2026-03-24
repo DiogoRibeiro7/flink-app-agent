@@ -1,0 +1,29 @@
+name: Enforce Main From Develop
+
+on:
+  push:
+    branches:
+      - main
+  pull_request_target:
+    branches:
+      - main
+
+jobs:
+  enforce-main-from-develop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate source branch for main
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "Push event on main detected; check context published."
+            exit 0
+          fi
+
+          if [[ "${{ github.head_ref }}" != "develop" ]]; then
+            echo "Only pull requests from 'develop' may merge into 'main'."
+            echo "Received head branch: '${{ github.head_ref }}'"
+            exit 1
+          fi
+
+          echo "Pull request source branch is valid."
