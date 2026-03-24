@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.generator import ProjectGenerator, TemplateCatalog
+from flink_app_agent.generator import ProjectGenerator, select_template_for_spec
 from flink_app_agent.llm import FilePromptRepository, SpecExtractionService, StubSpecExtractor
 
 
@@ -38,8 +38,8 @@ def test_sensor_job_request_generates_expected_project(tmp_path: Path) -> None:
     }
 
     repo_root = Path(__file__).resolve().parents[1]
-    template_dir = TemplateCatalog(templates_root=repo_root / "templates").resolve()
-    generator = ProjectGenerator(template_dir=template_dir)
+    template = select_template_for_spec(spec, repo_root / "templates")
+    generator = ProjectGenerator(template_dir=template.template_path)
     output_dir = tmp_path / "sensor-occupancy-alerts"
 
     generated_files = generator.generate(spec=spec, output_dir=output_dir)

@@ -30,6 +30,10 @@ class TemplateRenderingError(ValueError):
     """Raised when template rendering leaves unresolved placeholders behind."""
 
 
+class TemplateSelectionError(ValueError):
+    """Raised when no registered template matches the requested generation context."""
+
+
 @dataclass(frozen=True)
 class PlaceholderMapping:
     """Centralize conversion from a validated spec into template placeholders."""
@@ -86,16 +90,48 @@ class TemplateRenderer:
 
 
 @dataclass(frozen=True)
+class TemplateMetadata:
+    """Metadata for a registered local project template."""
+
+    name: str
+    template_path: Path
+    supported_rule_types: frozenset[str]
+
+
+@dataclass(frozen=True)
 class TemplateCatalog:
-    """Resolve local template directories by template identifier."""
+    """Resolve registered templates and select one for a validated spec."""
 
-    templates_root: Path
-    default_template_id: str = "flink_kafka_rule_job"
+    templates: tuple[TemplateMetadata, ...]
 
-    def resolve(self, template_id: str | None = None) -> Path:
-        """Return the directory for the requested template identifier."""
-        resolved_template_id = template_id or self.default_template_id
-        return self.templates_root / resolved_template_id
+    @classmethod
+    def from_root(cls, templates_root: Path) -> "TemplateCatalog":
+        """Build the catalog for the currently supported local templates."""
+        return cls(
+            templates=(
+                TemplateMetadata(
+                    name="flink_kafka_rule_job",
+                    template_path=templates_root / "flink_kafka_rule_job",
+                    supported_rule_types=frozenset({"two_events_within_window"}),
+                ),
+            )
+        )
+
+    def get(self, template_name: str) -> TemplateMetadata:
+        """Return a registered template by name."""
+        for template in self.templates:
+            if template.name == template_name:
+                return template
+        raise TemplateSelectionError(f"Unknown template: {template_name}")
+
+    def select_for_spec(self, spec: FlinkJobSpec) -> TemplateMetadata:
+        """Select the first registered template that supports the spec rule type."""
+        for template in self.templates:
+            if spec.rule_type in template.supported_rule_types:
+                return template
+        raise TemplateSelectionError(
+            f"No registered template supports rule_type '{spec.rule_type}'."
+        )
 
 
 @dataclass(frozen=True)
@@ -169,3 +205,9 @@ class ProjectGenerator:
     def _list_generated_files(self, output_dir: Path) -> list[Path]:
         """Return all generated files under the output directory."""
         return sorted(path for path in output_dir.rglob("*") if path.is_file())
+
+
+def select_template_for_spec(spec: FlinkJobSpec, templates_root: Path) -> TemplateMetadata:
+    """Select template metadata explicitly for a validated spec."""
+    catalog = TemplateCatalog.from_root(templates_root)
+    return catalog.select_for_spec(spec)

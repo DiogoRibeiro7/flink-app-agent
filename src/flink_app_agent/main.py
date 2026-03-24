@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from .generator import ProjectGenerator, TemplateCatalog
+from .generator import ProjectGenerator, select_template_for_spec
 from .llm import FilePromptRepository, SpecExtractionService, SpecParsingError, StubSpecExtractor
 from .spec import FlinkJobSpec
 
@@ -65,8 +65,8 @@ def parse_request(request: str) -> FlinkJobSpec:
 def generate_project(spec: FlinkJobSpec, output_dir: Path) -> list[Path]:
     """Generate the Flink project from the local template directory."""
     templates_root = Path(__file__).resolve().parents[2] / "templates"
-    template_dir = TemplateCatalog(templates_root=templates_root).resolve()
-    generator = ProjectGenerator(template_dir=template_dir)
+    template = select_template_for_spec(spec, templates_root)
+    generator = ProjectGenerator(template_dir=template.template_path)
     return generator.generate(spec=spec, output_dir=output_dir)
 
 

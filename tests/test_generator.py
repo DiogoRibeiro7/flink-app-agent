@@ -12,11 +12,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from flink_app_agent.generator import (
     PlaceholderMapping,
     ProjectGenerator,
+    TemplateMetadata,
     TemplateCatalog,
     TemplateRenderer,
     TemplateRenderingError,
+    TemplateSelectionError,
+    select_template_for_spec,
 )
-from flink_app_agent.spec import FlinkJobSpec
+from flink_app_agent.spec import ALLOWED_RULE_TYPE, FlinkJobSpec
 
 
 def test_generator_copies_template_replaces_text_and_renames_classes(tmp_path: Path) -> None:
@@ -106,11 +109,58 @@ def test_generator_rejects_output_path_with_file_parent(tmp_path: Path) -> None:
         generator.generate(FlinkJobSpec.demo(), invalid_parent / "generated")
 
 
-def test_template_catalog_resolves_default_template_path(tmp_path: Path) -> None:
-    """Template resolution should be isolated from project generation."""
-    catalog = TemplateCatalog(templates_root=tmp_path)
+def test_template_catalog_builds_registered_template_metadata(tmp_path: Path) -> None:
+    """Template registration should be explicit even with one real template."""
+    catalog = TemplateCatalog.from_root(tmp_path)
+    template = catalog.get("flink_kafka_rule_job")
 
-    assert catalog.resolve() == tmp_path / "flink_kafka_rule_job"
+    assert template.name == "flink_kafka_rule_job"
+    assert template.template_path == tmp_path / "flink_kafka_rule_job"
+    assert template.supported_rule_types == frozenset({ALLOWED_RULE_TYPE})
+
+
+def test_select_template_for_spec_returns_registered_template(tmp_path: Path) -> None:
+    """Specs should select the matching registered template explicitly."""
+    template = select_template_for_spec(FlinkJobSpec.demo(), tmp_path)
+
+    assert template.name == "flink_kafka_rule_job"
+    assert template.template_path == tmp_path / "flink_kafka_rule_job"
+
+
+def test_template_catalog_rejects_unknown_template_name(tmp_path: Path) -> None:
+    """Unknown template names should fail with a clear selection error."""
+    catalog = TemplateCatalog.from_root(tmp_path)
+
+    with pytest.raises(TemplateSelectionError, match="Unknown template"):
+        catalog.get("missing-template")
+
+
+def test_template_catalog_rejects_unsupported_rule_type(tmp_path: Path) -> None:
+    """Rule types with no matching template should fail selection."""
+    unsupported_spec = FlinkJobSpec.model_construct(
+        job_name="unsupported-job",
+        source_topic="payments",
+        sink_topic="alerts",
+        key_by="account_id",
+        event_time_field="event_time",
+        input_event_name="InputEvent",
+        output_event_name="AlertEvent",
+        rule_type="unsupported_rule",
+        rule_condition="demo",
+        time_window_minutes=5,
+    )
+    catalog = TemplateCatalog(
+        templates=(
+            TemplateMetadata(
+                name="flink_kafka_rule_job",
+                template_path=tmp_path / "flink_kafka_rule_job",
+                supported_rule_types=frozenset({ALLOWED_RULE_TYPE}),
+            ),
+        )
+    )
+
+    with pytest.raises(TemplateSelectionError, match="supports rule_type"):
+        catalog.select_for_spec(unsupported_spec)
 
 
 def _create_template(template_dir: Path) -> Path:
