@@ -98,6 +98,50 @@ Given the request above, the current stub parser produces a spec equivalent to:
 }
 ```
 
+## End-To-End Example
+
+One realistic request used in the test suite is:
+
+```text
+Build a Kafka job named sensor occupancy alerts with source topic sensor-events,
+sink topic occupancy-alerts, key by room_id, event time field event_ts,
+and emit BED_OUT within 20 minutes.
+```
+
+Expected spec:
+
+```json
+{
+  "job_name": "sensor-occupancy-alerts",
+  "source_topic": "sensor-events",
+  "sink_topic": "occupancy-alerts",
+  "key_by": "room_id",
+  "event_time_field": "event_ts",
+  "input_event_name": "InputEvent",
+  "output_event_name": "BedOut",
+  "rule_type": "two_events_within_window",
+  "rule_condition": "emit BedOut when two keyed events match within 20 minutes",
+  "time_window_minutes": 20
+}
+```
+
+Sample generated tree:
+
+```text
+out/
+├── README.md
+├── pom.xml
+└── src/
+    ├── main/java/com/example/
+    │   ├── SensorOccupancyAlertsJob.java
+    │   ├── functions/RuleProcessFunction.java
+    │   └── model/
+    │       ├── BedOut.java
+    │       └── InputEvent.java
+    └── test/java/com/example/
+        └── RuleProcessFunctionTest.java
+```
+
 ## How Generation Works
 
 `generator.py` performs local filesystem operations only.
@@ -157,7 +201,7 @@ poetry run pytest
 Run a smaller subset:
 
 ```bash
-poetry run pytest tests/test_spec.py tests/test_llm.py tests/test_generator.py
+poetry run pytest tests/test_spec.py tests/test_llm.py tests/test_generator.py tests/test_end_to_end.py
 ```
 
 ## Current Limitations
