@@ -1,4 +1,4 @@
-"""Tests for the v0.2 Flink job specification model."""
+"""Tests for the Flink job specification model."""
 
 from __future__ import annotations
 
@@ -61,11 +61,14 @@ def test_invalid_time_window() -> None:
 
 
 def test_invalid_rule_type() -> None:
-    """Only the single v0.2 rule type should validate."""
+    """Only the current supported rule type should validate."""
     payload = FlinkJobSpec.demo().model_dump()
     payload["rule_type"] = "count_by_key_window"
 
-    with pytest.raises(ValidationError, match="rule_type must be 'two_events_within_window' for v0.2"):
+    with pytest.raises(
+        ValidationError,
+        match="rule_type must be 'two_events_within_window' for the current template path",
+    ):
         FlinkJobSpec.model_validate(payload)
 
 

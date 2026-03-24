@@ -1,4 +1,4 @@
-"""Tests for the deterministic v0.2 extractor and prompt loading."""
+"""Tests for the deterministic extractor and prompt loading."""
 
 from __future__ import annotations
 

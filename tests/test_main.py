@@ -1,4 +1,4 @@
-"""CLI-oriented tests for the v0.1 command-line entry point."""
+"""CLI-oriented tests for the local command-line entry point."""
 
 from __future__ import annotations
 

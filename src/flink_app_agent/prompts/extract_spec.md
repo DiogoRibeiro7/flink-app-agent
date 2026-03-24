@@ -1,6 +1,6 @@
 # Extract Flink Job Spec
 
-Future model behavior for v0.1:
+Future model-backed behavior:
 
 Convert a plain-English Flink job request into a validated `FlinkJobSpec`.
 
@@ -17,7 +17,7 @@ Return exactly these fields:
 - `rule_condition`
 - `time_window_minutes`
 
-Current v0.1 scope:
+Current repository scope:
 
 - one Kafka source topic
 - one key field
@@ -25,4 +25,4 @@ Current v0.1 scope:
 - one time window in minutes
 - one supported rule type: `two_events_within_window`
 
-If information is missing, use the safe v0.1 defaults only where explicitly allowed by the application.
+If information is missing, use only the safe defaults explicitly defined by the application.

@@ -7,12 +7,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from .constants import GENERATION_REPORT_FILENAME
 from .generation_context import GenerationContext
 from .review import ReviewResult
 from .spec import FlinkJobSpec
 
 
-REPORT_FILENAME = "generation_report.json"
+REPORT_FILENAME = GENERATION_REPORT_FILENAME
 
 
 @dataclass(frozen=True)

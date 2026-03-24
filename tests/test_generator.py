@@ -1,4 +1,4 @@
-"""Tests for the v0.1 local template generator."""
+"""Tests for the local template generator."""
 
 from __future__ import annotations
 

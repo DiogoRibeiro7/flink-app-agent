@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from .constants import GENERATION_REPORT_FILENAME
 from .generation_context import GenerationContext
 from .generator import ProjectGenerator
 from .llm import SpecParsingError, build_default_spec_extractor
@@ -58,18 +59,14 @@ def main(argv: list[str] | None = None) -> int:
         output_dir = Path(args.output) if args.output is not None else Path(".")
         context = build_generation_context(args.request, output_dir)
 
-        if should_print_spec(args):
-            print_parsed_spec_summary(context.spec)
+        print_parsed_spec_summary(context.spec)
         if should_print_template_info(args):
             print_template_summary(context.template)
         if not should_generate:
             return 0
 
         context.generated_files = generate_project(context)
-        context.review_result = review_project(context)
-        context.report_path = write_report(context)
-        context.review_result = review_project(context)
-        context.report_path = write_report(context)
+        finalize_generated_project(context)
 
         print_generation_summary(context)
         if context.review_result is not None and not context.review_result.success:
@@ -87,11 +84,6 @@ def parse_request(request: str) -> FlinkJobSpec:
     """Parse a natural-language request into a validated ``FlinkJobSpec``."""
     extractor = build_default_spec_extractor()
     return extractor.extract_spec(request)
-
-
-def should_print_spec(args: argparse.Namespace) -> bool:
-    """Return whether the CLI should print the parsed spec summary."""
-    return True
 
 
 def should_print_template_info(args: argparse.Namespace) -> bool:
@@ -116,6 +108,7 @@ def build_template_registry() -> TemplateRegistry:
     templates_root = Path(__file__).resolve().parents[2] / "templates"
     return TemplateRegistry.from_root(templates_root)
 
+
 def resolve_template(spec: FlinkJobSpec) -> TemplateDefinition:
     """Resolve the registered template for a validated spec."""
     return build_template_registry().resolve_for_spec(spec)
@@ -125,6 +118,19 @@ def generate_project(context: GenerationContext) -> list[Path]:
     """Generate the project from the template resolved in the shared context."""
     generator = ProjectGenerator(template_dir=context.template.template_path)
     return generator.generate(spec=context.spec, output_dir=context.output_dir)
+
+
+def finalize_generated_project(context: GenerationContext) -> None:
+    """Finalize one generation run with review and report writing.
+
+    The review checks that the report artifact exists. The first pass captures
+    the generated project state, the report is written, and then the final
+    review/report pair produces the stable end result consumed by the CLI.
+    """
+    context.review_result = review_project(context)
+    context.report_path = write_report(context)
+    context.review_result = review_project(context)
+    context.report_path = write_report(context)
 
 
 def review_project(context: GenerationContext) -> ReviewResult:
@@ -168,7 +174,8 @@ def print_generation_summary(context: GenerationContext) -> None:
     print(f"Chosen template: {context.template.template_id}")
     print(f"Generation target: {context.output_dir}")
     print(f"Generated files count: {len(context.generated_files)}")
-    print(f"Generation report: {context.report_path}")
+    report_name = context.report_path.name if context.report_path is not None else GENERATION_REPORT_FILENAME
+    print(f"Generation report: {context.output_dir / report_name}")
     print("Generated files:")
     for path in context.generated_files:
         print(f"- {path}")

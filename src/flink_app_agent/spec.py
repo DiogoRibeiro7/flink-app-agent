@@ -1,4 +1,4 @@
-"""Strict internal specification model for the v0.1 agent."""
+"""Strict internal specification model for the current local generation flow."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ ALLOWED_RULE_TYPE = "two_events_within_window"
 
 
 class FlinkJobSpec(BaseModel):
-    """Validated internal specification for the narrow v0.2 Flink job flow."""
+    """Validated internal specification for the current narrow Flink job flow."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     supported_rule_types: ClassVar[set[str]] = {ALLOWED_RULE_TYPE}
@@ -26,7 +26,7 @@ class FlinkJobSpec(BaseModel):
     event_time_field: str = Field(description="Event-time field name.")
     input_event_name: str = Field(description="Input event class name.")
     output_event_name: str = Field(description="Output event class name.")
-    rule_type: str = Field(description="Supported rule type for v0.2.")
+    rule_type: str = Field(description="Supported rule type for the current template path.")
     rule_condition: str = Field(description="Human-readable rule condition.")
     time_window_minutes: int = Field(gt=0, description="Positive time window length.")
 
@@ -80,10 +80,10 @@ class FlinkJobSpec(BaseModel):
     @field_validator("rule_type")
     @classmethod
     def validate_rule_type(cls, value: str) -> str:
-        """Allow only the single supported v0.2 rule type."""
+        """Allow only the single currently supported rule type."""
         if value != ALLOWED_RULE_TYPE:
             raise ValueError(
-                f"rule_type must be '{ALLOWED_RULE_TYPE}' for v0.2."
+                f"rule_type must be '{ALLOWED_RULE_TYPE}' for the current template path."
             )
         return value
 

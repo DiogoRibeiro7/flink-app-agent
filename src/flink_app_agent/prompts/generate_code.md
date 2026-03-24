@@ -1,6 +1,6 @@
 # Generate Flink Code
 
-Future model behavior for v0.1:
+Future model-backed behavior:
 
 Generate a Flink project from a validated `FlinkJobSpec`.
 

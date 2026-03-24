@@ -111,7 +111,7 @@ class SpecExtractionService:
 
 @dataclass(frozen=True)
 class DeterministicSpecPayloadExtractor:
-    """Deterministic extractor for the narrow v0.2 request surface."""
+    """Deterministic extractor for the current narrow request surface."""
 
     default_sink_topic: str = "inferred-events"
     default_event_time_field: str = "ts"

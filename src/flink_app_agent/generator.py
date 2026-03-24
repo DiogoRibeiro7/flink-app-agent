@@ -1,4 +1,4 @@
-"""Local template generator for the single v0.1 Flink project template."""
+"""Local template generator for the current single-template pipeline."""
 
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ class TemplateRenderer:
 
 @dataclass(frozen=True)
 class ProjectGenerator:
-    """Generate a Flink project from the single local v0.1 template directory."""
+    """Generate a Flink project from the currently selected local template directory."""
 
     template_dir: Path
     renderer: TemplateRenderer = field(default_factory=TemplateRenderer)

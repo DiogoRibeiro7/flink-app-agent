@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .constants import GENERATION_REPORT_FILENAME
 from .generator import PLACEHOLDER_PATTERN, SAFE_TEXT_EXTENSIONS, build_main_class_name
 from .spec import FlinkJobSpec
 
 
-REPORT_FILENAME = "generation_report.json"
+REPORT_FILENAME = GENERATION_REPORT_FILENAME
 
 
 @dataclass
