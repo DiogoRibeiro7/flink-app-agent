@@ -1,164 +1,113 @@
 # Roadmap
 
-This roadmap reflects the current repository state. It is incremental and intentionally conservative.
+This roadmap reflects the repository after the current `v0.3` changes. It is intentionally conservative. The project is still a small local tool, and future work should keep that shape unless there is a clear reason to broaden it.
 
-The project already has:
+## Current v0.3
 
-- a deterministic extraction pipeline
-- strict spec validation
-- explicit template selection
-- one registered real template
-- local project generation
-- lightweight post-generation review
-- a machine-readable generation report
+The repository currently provides:
 
-The next work should strengthen those pieces before adding broader scope.
+- deterministic request extraction with explicit extraction-layer boundaries
+- strict spec validation and normalization
+- explicit template registry and template selection
+- one real local Flink template
+- local project generation with placeholder rendering safeguards
+- deterministic post-generation review
+- machine-readable generation report output
+- a simple CLI with small inspection modes
+- fixture-based and end-to-end local tests
 
-## Phase 1: Stronger Extraction
+This is enough for a narrow request-to-project path, but it is still intentionally limited. The repository is not yet trying to be a general Flink generation platform.
 
-Objective:
-Make the deterministic extraction layer more reliable before introducing a real provider.
+## Likely v0.4
 
-Likely work:
+The next likely version should improve confidence and coverage without changing the tool’s basic shape.
 
-- tighten supported request patterns and error messages
-- improve handling of ambiguous wording without broadening scope too quickly
-- add more focused tests around supported request variants
-- make safe defaults more explicit in docs and code
+Primary themes:
 
-Exit criteria:
+- second real template family
+- limited repair loop for safe obvious issues
+- richer deterministic review checks
+- better request interpretation within the current narrow scope
+- stricter output guarantees
 
-- fewer extractor edge cases
-- clearer failure modes when essential fields are missing
-- stable tests for the supported deterministic request surface
+Likely changes:
 
-## Phase 2: Stronger Validation
+- add one second template that is materially different from the current keyed rule job
+- refine template selection so mismatches fail earlier and more clearly
+- broaden deterministic extraction for a few more supported phrasings without moving to open-ended interpretation
+- add a small repair pass only for narrow and auditable cases, such as trivial generated-file inconsistencies
+- strengthen review checks around expected generated files and generated content
+- tighten report contents so successful generation leaves behind a more complete machine-readable summary
 
-Objective:
-Keep invalid or inconsistent specs from reaching generation.
+Non-goals for `v0.4`:
 
-Likely work:
+- many template families
+- broad natural-language understanding
+- hosted services
+- compile-and-run verification by default
 
-- add more spec-level compatibility checks for template selection
-- validate relationships between `rule_type` and generated naming
-- make normalization behavior more explicit and more testable
+## v1.0 Target
 
-Exit criteria:
+`v1.0` should represent a stable small internal tool rather than a broad platform.
 
-- template selection failures happen before generation
-- validation errors remain precise and deterministic
+The `v1.0` target is:
 
-## Phase 3: Rendering Improvements
+- stable template families with clear compatibility rules
+- provider-backed extraction available as an optional path behind the existing interface
+- stronger artifact validation after generation
+- more complete generated scaffolds for the supported templates
+- predictable CLI and report outputs suitable for local automation
 
-Objective:
-Make template rendering more explicit and safer without overbuilding it.
+Likely `v1.0` characteristics:
 
-Likely work:
+- two or a few template families, not many
+- deterministic stub path retained for tests and local development
+- optional real provider path that does not leak provider details across the codebase
+- stronger review plus optional compile-oriented verification for generated artifacts
+- generated templates that still stay small, but are more coherent and practical than the current starter scaffolds
 
-- strengthen unresolved placeholder reporting
-- improve file rename handling and generated class naming consistency
-- add template-focused tests for expected generated paths and placeholder replacement
+`v1.0` is not meant to imply a fully autonomous agent or production deployment system. It is a stability milestone for the constrained-tool vision.
 
-Exit criteria:
+## Later Optional Directions
 
-- rendering failures are easy to diagnose
-- generated file naming is consistent across the current template and future additions
+These directions are plausible later, but they are not current commitments.
 
-## Phase 4: Template Growth
+### Optional provider work
 
-Objective:
-Prepare the single-template path for one or two more templates later without broadening scope too quickly.
+- support one real extraction provider behind the existing extraction interfaces
+- improve prompt versioning and prompt testing
 
-Likely work:
-
-- refine template metadata and compatibility rules
-- keep the current single-template registry small and explicit
-- add a second template only when compatibility rules stay easy to understand
-
-Non-goal for this phase:
-
-- supporting many Flink patterns at once
-
-Exit criteria:
-
-- template selection stays small and explicit
-- template-specific tests remain easy to understand
-
-## Phase 5: Review And Repair
-
-Objective:
-Improve the deterministic review pass without turning it into a full linting or build system.
-
-Likely work:
-
-- expand checks for key generated files per template
-- add a few more small repairs where the fix is obvious and safe
-- make review output easier to consume from the CLI
-
-Exit criteria:
-
-- review catches common structural mistakes
-- repairs remain narrow, deterministic, and easy to audit
-
-## Phase 6: Real LLM Integration
-
-Objective:
-Replace the stub extractor with a real provider-backed implementation without changing the rest of the pipeline.
-
-Likely work:
-
-- implement a provider-backed extractor behind the existing extraction interface
-- use the checked-in prompts as the provider input
-- keep spec validation and template selection unchanged
-- preserve deterministic tests for the stub path
-
-Constraints:
-
-- do not let provider-specific details spread across generator or review modules
-
-Exit criteria:
-
-- provider-backed extraction is optional and isolated
-- the stub path still exists for tests and local development
-
-## Phase 7: Deployment Support
-
-Objective:
-Add the minimum packaging and deployment support after generation is stable.
-
-Likely work:
-
-- generated project packaging guidance
-- deployment-oriented template documentation
-- optional repository-level Docker or deployment helpers later
-
-Non-goal for this phase:
-
-- a full deployment framework inside this repository
-
-## Phase 8: Compile And Test Verification
-
-Objective:
-Add stronger verification after generation once template structure is stable.
-
-Likely work:
+### Optional verification work
 
 - optional Maven compile checks for generated projects
 - optional generated-project test execution
-- CI checks that stay fast enough for routine development
+- stricter artifact completeness checks per template
 
-Constraints:
+### Optional template growth
 
-- keep these checks optional at first
-- avoid turning generation into a heavy build pipeline too early
+- one or two additional focused template families
+- richer template metadata and compatibility constraints
+
+### Optional packaging and delivery work
+
+- better generated project packaging guidance
+- optional deployment helpers for generated projects
 
 ## Out Of Scope For Now
 
-The following are not current roadmap priorities:
+The following are still not near-term priorities:
 
 - UI development
 - web APIs
-- database-backed project storage
-- broad natural-language support
-- many Flink template families at once
-- full runtime configuration management
+- database-backed state
+- broad workflow orchestration
+- many templates at once
+- unconstrained natural-language generation
+- infrastructure-heavy deployment systems
+
+## Compact Stage Summary
+
+- `v0.3`: stable narrow local pipeline with one real template, deterministic review, and generation reporting
+- `v0.4`: add one more real template, limited repair, stronger review, and better deterministic request handling
+- `v1.0`: stabilize a small set of templates, keep provider-backed extraction optional, and improve artifact-level guarantees
+- later: optional provider, verification, and packaging improvements if the constrained tool remains maintainable
