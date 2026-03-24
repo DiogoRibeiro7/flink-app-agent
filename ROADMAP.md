@@ -7,9 +7,10 @@ The project already has:
 - a deterministic extraction pipeline
 - strict spec validation
 - explicit template selection
-- two local template families
+- one registered real template
 - local project generation
 - lightweight post-generation review
+- a machine-readable generation report
 
 The next work should strengthen those pieces before adding broader scope.
 
@@ -22,14 +23,14 @@ Likely work:
 
 - tighten supported request patterns and error messages
 - improve handling of ambiguous wording without broadening scope too quickly
-- add more focused tests around request-family classification
+- add more focused tests around supported request variants
 - make safe defaults more explicit in docs and code
 
 Exit criteria:
 
 - fewer extractor edge cases
 - clearer failure modes when essential fields are missing
-- stable tests for both supported job families
+- stable tests for the supported deterministic request surface
 
 ## Phase 2: Stronger Validation
 
@@ -61,18 +62,18 @@ Likely work:
 Exit criteria:
 
 - rendering failures are easy to diagnose
-- generated file naming is consistent across template families
+- generated file naming is consistent across the current template and future additions
 
-## Phase 4: Template Families
+## Phase 4: Template Growth
 
 Objective:
-Stabilize multi-template support before adding more job shapes.
+Prepare the single-template path for one or two more templates later without broadening scope too quickly.
 
 Likely work:
 
 - refine template metadata and compatibility rules
-- keep the current two-family setup maintainable
-- add a third template family only if the second family path is stable
+- keep the current single-template registry small and explicit
+- add a second template only when compatibility rules stay easy to understand
 
 Non-goal for this phase:
 
@@ -81,7 +82,7 @@ Non-goal for this phase:
 Exit criteria:
 
 - template selection stays small and explicit
-- family-specific tests remain easy to understand
+- template-specific tests remain easy to understand
 
 ## Phase 5: Review And Repair
 
@@ -90,7 +91,7 @@ Improve the deterministic review pass without turning it into a full linting or 
 
 Likely work:
 
-- expand checks for key generated files per template family
+- expand checks for key generated files per template
 - add a few more small repairs where the fix is obvious and safe
 - make review output easier to consume from the CLI
 

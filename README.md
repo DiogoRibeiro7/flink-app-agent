@@ -1,151 +1,70 @@
 # flink-app-agent
 
-`flink-app-agent` is a small Python CLI that turns a narrow plain-English Flink job request into:
+`flink-app-agent` is a small internal-style CLI that turns a narrow plain-English Flink job request into:
 
-1. a validated internal specification
-2. a generated Java Flink project from one local template
-3. a deterministic structural review summary
+1. a validated internal spec
+2. a generated Flink Java project from one local template
+3. a deterministic structural review and JSON generation report
 
-## Project Purpose
+The repository is intentionally small. It is meant to make one path from request text to generated project explicit and testable, not to cover broad Flink design space or open-ended code generation.
 
-The purpose of `flink-app-agent` is to provide a small, explicit foundation for Flink job scaffolding.
+## Scope
 
-The repository is not trying to solve general code generation or open-ended natural-language planning. It focuses on a short local path from request text to a validated spec and a generated starter project.
-
-## Why The Scope Is Still Intentionally Narrow
-
-The scope remains narrow in `v0.2` so the moving parts stay easy to inspect and test:
+Current scope is deliberately narrow:
 
 - one CLI entry point
 - one strict spec model
 - one deterministic extractor
-- one local template
+- one registered real template
 - one local generator
-- one small structural review step
+- one deterministic review step
+- one JSON report artifact
 
-This keeps the project understandable while improving the existing flow incrementally rather than adding new product surfaces.
+The project does not try to infer many job families, manage infrastructure, or hide the generation process behind a larger service.
 
-## What Changed From v0.1 To v0.2
+## Pipeline Overview
 
-Compared with `v0.1`, `v0.2` adds:
+The current pipeline is:
 
-- broader deterministic request parsing for a few more phrasing variants
-- stricter spec normalization and validation
-- safer template rendering with unresolved-placeholder detection
-- clearer template documentation and Java flow structure
-- a deterministic post-generation structural check
-- a realistic local end-to-end test
-
-The architecture is still the same basic shape: parse -> validate -> generate -> structurally check.
-
-## Current Architecture Flow
-
-The current flow is:
-
-1. `main.py` reads `--request` and `--output`
-2. `llm.py` parses the request with a deterministic rule-based extractor
+1. `main.py` parses CLI arguments
+2. `llm.py` preprocesses the request, loads the extraction prompt, and runs the deterministic extractor
 3. `spec.py` validates and normalizes the resulting `FlinkJobSpec`
-4. `generator.py` copies the local template into the output directory
-5. `generator.py` renders placeholders in safe text files and renames common template files
-6. `review.py` runs a small structural check on generated output
-7. `main.py` prints a stable summary for scripting and terminal use
+4. `template_registry.py` resolves the local template for the spec
+5. `generator.py` copies the template, renders placeholders in safe text files, and returns generated paths
+6. `review.py` runs lightweight file-based checks on the generated project
+7. `report.py` writes `generation_report.json`
+8. `main.py` prints a concise summary
 
-## Supported Request Patterns
+Deeper implementation notes live in:
 
-The extractor remains deterministic and supports only a small set of phrasing variants around the same job shape.
-
-Supported source-topic phrasing includes:
-
-- `Read from Kafka <topic>`
-- `Consume <topic> from Kafka`
-- `Build a Flink job reading <topic>`
-- `Read topic <topic>`
-
-Supported key-field phrasing includes:
-
-- `key by <field>`
-- `keyed by <field>`
-- `keying by <field>`
-- `group by <field>`
-
-Supported output-event phrasing includes:
-
-- `emit <EVENT> within <N> minutes`
-- `emit <EVENT> events within <N> minutes`
-- `writing <EVENT> within <N> minutes`
-- `write <EVENT> within <N> minutes`
-
-The supported job shape is still one keyed Kafka rule job with one event-time field and one time window in minutes.
-
-## Safe Defaults
-
-The extractor applies a few fixed defaults:
-
-- `sink_topic`: `inferred-events`
-- `event_time_field`: `ts`
-- `input_event_name`: `InputEvent`
-- `rule_type`: `two_events_within_window`
-- `job_name`: derived from the output event name
-- `rule_condition`: generated from the output event name and time window
-
-## Generation Flow
-
-Generation stays local and deterministic:
-
-1. `generator.py` uses the single local template directory `templates/flink_kafka_rule_job`
-2. the template is copied into the requested output directory
-3. placeholders are built from `FlinkJobSpec`
-4. only known text file extensions are rendered
-5. unresolved placeholders raise a clear error
-6. common Java template files are renamed to match the resolved spec
-7. the generator returns the full generated file list
-
-Supported placeholders are:
-
-- `{{JOB_NAME}}`
-- `{{SOURCE_TOPIC}}`
-- `{{SINK_TOPIC}}`
-- `{{KEY_BY}}`
-- `{{EVENT_TIME_FIELD}}`
-- `{{INPUT_EVENT_NAME}}`
-- `{{OUTPUT_EVENT_NAME}}`
-- `{{RULE_TYPE}}`
-- `{{RULE_CONDITION}}`
-- `{{TIME_WINDOW_MINUTES}}`
-
-## Structural Check Flow
-
-After generation, `review.py` runs a small deterministic structural check.
-
-It currently checks:
-
-- output directory exists
-- generated README exists
-- generated main Flink job file exists
-- no unresolved placeholders remain in generated text files
-
-It returns:
-
-- `passed_checks`
-- `failed_checks`
-- `warnings`
-
-This is not a compiler step, not a linting system, and not a semantic review.
+- [Architecture](docs/architecture.md)
+- [Spec Model](docs/spec.md)
+- [Templates](docs/templates.md)
+- [Review And Report](docs/review.md)
 
 ## Repository Structure
 
 ```text
 flink-app-agent/
 ├── README.md
+├── ROADMAP.md
+├── docs/
+│   ├── architecture.md
+│   ├── review.md
+│   ├── spec.md
+│   └── templates.md
 ├── pyproject.toml
 ├── src/
 │   └── flink_app_agent/
 │       ├── __init__.py
+│       ├── generation_context.py
 │       ├── generator.py
 │       ├── llm.py
 │       ├── main.py
+│       ├── report.py
 │       ├── review.py
 │       ├── spec.py
+│       ├── template_registry.py
 │       ├── utils.py
 │       └── prompts/
 │           ├── extract_spec.md
@@ -153,12 +72,36 @@ flink-app-agent/
 ├── templates/
 │   └── flink_kafka_rule_job/
 └── tests/
-    ├── test_end_to_end.py
-    ├── test_generator.py
-    ├── test_llm.py
-    ├── test_main.py
-    ├── test_review.py
-    └── test_spec.py
+```
+
+## Quickstart
+
+Install dependencies:
+
+```bash
+poetry install
+```
+
+Run the default generation flow:
+
+```bash
+poetry run flink-app-agent \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --output ./out
+```
+
+Useful inspection-only modes:
+
+```bash
+poetry run flink-app-agent \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --print-spec-only
+```
+
+```bash
+poetry run flink-app-agent \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --print-template-info
 ```
 
 ## Example Request
@@ -167,9 +110,9 @@ flink-app-agent/
 Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes
 ```
 
-## Example Spec Summary
+## Example Output
 
-For the request above, the current extractor produces:
+For that request, the current extractor produces a spec like:
 
 ```json
 {
@@ -186,31 +129,7 @@ For the request above, the current extractor produces:
 }
 ```
 
-## Example CLI Run
-
-Install dependencies:
-
-```bash
-poetry install
-```
-
-Run the CLI:
-
-```bash
-poetry run flink-app-agent \
-  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
-  --output ./out
-```
-
-Equivalent module form:
-
-```bash
-poetry run python -m flink_app_agent.main \
-  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
-  --output ./out
-```
-
-Example output summary:
+Typical CLI summary:
 
 ```text
 Parsed spec summary:
@@ -230,14 +149,16 @@ Parsed spec summary:
 Chosen template: flink_kafka_rule_job
 Generation target: out
 Generated files count: 7
-Structural review summary: 4 passed, 0 failed, 0 warnings
+Generation report: out\generation_report.json
+Structural review summary: passed, 8 passed, 0 failed, 0 warnings
 ```
 
-## Example Generated Project Structure
+Example generated project shape:
 
 ```text
 out/
 ├── README.md
+├── generation_report.json
 ├── pom.xml
 └── src/
     ├── main/java/com/example/
@@ -250,54 +171,19 @@ out/
         └── RuleProcessFunctionTest.java
 ```
 
-## Testing Instructions
+## Limitations
 
-Run the full local Python test suite:
+Current limitations are explicit:
 
-```bash
-poetry run pytest
-```
+- no external LLM or API calls
+- no web service or database
+- no Java compile or runtime verification
+- no Docker or deployment workflow
+- one real template only
+- one supported rule type only
+- request parsing is still deterministic and pattern-based
+- some fields are filled through fixed defaults rather than user-controlled extraction
 
-The current suite covers:
+## Roadmap
 
-- spec validation and normalization
-- deterministic extraction variants
-- generator rendering and failure cases
-- CLI success and failure output
-- structural review checks
-- one realistic end-to-end local flow
-
-## Current Limitations
-
-The implementation is still intentionally limited.
-
-- no external LLM integration
-- no multiple templates
-- no multiple job families
-- no Java compilation or Flink execution
-- no Kafka connectivity checks
-- no web server, database, or Docker support
-- request understanding is still based on a small set of regex patterns
-- sink topic and some other fields still rely on fixed defaults rather than user-controlled extraction
-
-## Next Likely Developments After v0.2
-
-Reasonable next steps after `v0.2` are:
-
-- broaden the deterministic extractor carefully without losing readability
-- add stronger compatibility checks between spec values and generation
-- make the structural review slightly more informative
-- add a second template only after the current single-template path remains stable
-- introduce a real provider-backed extractor later behind the current interface
-
-## v0.2 Boundaries
-
-This README now reflects the actual `v0.2` implementation:
-
-- one strict spec model
-- one deterministic multi-variant extractor
-- one local Flink template
-- one local generator
-- one deterministic structural review step
-- one CLI flow
-- no external model calls
+Planned next steps are tracked in [ROADMAP.md](ROADMAP.md). The current direction is to keep the pipeline small while strengthening extraction boundaries, validation, rendering, and verification incrementally.
