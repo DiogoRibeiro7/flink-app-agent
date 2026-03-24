@@ -5,10 +5,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Placeholder input event for {{INPUT_EVENT_NAME}}.
+ * Minimal input event model for {{INPUT_EVENT_NAME}}.
  *
- * <p>The generated template uses a minimal parser so the wiring stays understandable. Replace this
- * with a real schema-aware parser when integrating with actual Kafka payloads.
+ * <p>The v0.1 template uses a small map-backed payload so the generated project is easy to read.
+ * Replace this parser with a real schema-aware implementation later.
  */
 public class {{INPUT_EVENT_NAME}} {
     private final Map<String, String> fields;
@@ -20,7 +20,7 @@ public class {{INPUT_EVENT_NAME}} {
     }
 
     /**
-     * Parse a simple comma-separated `key=value` payload into a map-backed event.
+     * Parse a very small comma-separated `key=value` payload.
      */
     public static {{INPUT_EVENT_NAME}} fromRaw(String rawPayload) {
         Map<String, String> parsedFields = new HashMap<>();

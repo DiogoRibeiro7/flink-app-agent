@@ -9,10 +9,11 @@ import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 
 /**
- * Placeholder keyed rule implementation for `{{RULE_TYPE}}`.
+ * Minimal keyed rule process function for `{{RULE_TYPE}}`.
  *
- * <p>This class is intentionally simple but realistic enough to show where keyed state, event-time
- * timestamps, and cleanup timers belong in a generated Flink application.
+ * <p>This v0.1 scaffold shows where keyed state and event-time timers belong. The matching logic is
+ * intentionally simple: the second event for the same key inside `{{TIME_WINDOW_MINUTES}}` minutes
+ * emits one `{{OUTPUT_EVENT_NAME}}`.
  */
 public class RuleProcessFunction
         extends KeyedProcessFunction<String, {{INPUT_EVENT_NAME}}, {{OUTPUT_EVENT_NAME}}> {
@@ -52,7 +53,7 @@ public class RuleProcessFunction
         Long firstSeen = firstSeenEventTime.value();
 
         if (firstSeen == null) {
-            // First event for this key. Keep it in keyed state and wait for a second one.
+            // First event for this key: store it and register cleanup.
             firstSeenEventTime.update(eventTime);
             ctx.timerService().registerEventTimeTimer(eventTime + windowMillis());
             return;
@@ -66,7 +67,7 @@ public class RuleProcessFunction
                     eventTime));
         }
 
-        // Keep the latest event time as the active candidate for the next match window.
+        // Keep the latest event as the active candidate for the next match.
         firstSeenEventTime.update(eventTime);
         ctx.timerService().registerEventTimeTimer(eventTime + windowMillis());
     }
@@ -78,7 +79,7 @@ public class RuleProcessFunction
             Collector<{{OUTPUT_EVENT_NAME}}> out) throws Exception {
         Long firstSeen = firstSeenEventTime.value();
         if (firstSeen != null && firstSeen + windowMillis() <= timestamp) {
-            // Timer-based cleanup keeps stale keyed state from accumulating forever.
+            // Timer cleanup avoids keeping stale per-key state forever.
             firstSeenEventTime.clear();
         }
     }

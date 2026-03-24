@@ -1,10 +1,10 @@
 package com.example.model;
 
 /**
- * Placeholder output event for {{OUTPUT_EVENT_NAME}}.
+ * Minimal output event model for {{OUTPUT_EVENT_NAME}}.
  *
- * <p>The generated job emits this model after the keyed rule has matched. The structure is small
- * on purpose so it is easy to replace with a domain-specific schema later.
+ * <p>The generated process function emits this object after a keyed match within the configured
+ * window. The structure is intentionally small so it can be replaced later.
  */
 public class {{OUTPUT_EVENT_NAME}} {
     private final String key;

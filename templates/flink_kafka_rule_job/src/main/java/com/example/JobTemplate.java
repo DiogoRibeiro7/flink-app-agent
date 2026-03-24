@@ -15,16 +15,15 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
 /**
- * Generated starter job for {{JOB_NAME}}.
+ * Minimal generated Flink job for {{JOB_NAME}}.
  *
- * <p>The placeholder values in this file are injected by `flink-app-agent`. The generated code
- * keeps the control flow explicit so the user can see where Kafka I/O, timestamp extraction,
- * watermarking, keying, and keyed rule evaluation happen.
+ * <p>This template keeps the full flow visible: Kafka source, event-time handling, watermark
+ * assignment, keyBy, keyed processing, and Kafka sink output.
  */
 final class JobTemplate {
 
     private static final String BOOTSTRAP_SERVERS = "localhost:9092";
-    private static final Duration WATERMARK_OUT_OF_ORDERNESS = Duration.ofSeconds(30);
+    private static final Duration ALLOWED_LATENESS = Duration.ofSeconds(30);
 
     private JobTemplate() {
     }
@@ -32,33 +31,28 @@ final class JobTemplate {
     public static void main(String[] args) throws Exception {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        KafkaSource<String> source = buildSource();
-        KafkaSink<String> sink = buildSink();
-
         DataStream<String> rawEvents = env.fromSource(
-                source,
+                buildSource(),
                 WatermarkStrategy.noWatermarks(),
                 "{{JOB_NAME}}-source");
 
-        DataStream<{{INPUT_EVENT_NAME}}> parsedEvents = rawEvents.map({{INPUT_EVENT_NAME}}::fromRaw);
+        DataStream<{{INPUT_EVENT_NAME}}> inputEvents =
+                rawEvents
+                        .map({{INPUT_EVENT_NAME}}::fromRaw)
+                        .assignTimestampsAndWatermarks(buildWatermarkStrategy());
 
-        WatermarkStrategy<{{INPUT_EVENT_NAME}}> watermarkStrategy =
-                WatermarkStrategy
-                        .<{{INPUT_EVENT_NAME}}>forBoundedOutOfOrderness(WATERMARK_OUT_OF_ORDERNESS)
-                        .withTimestampAssigner(new EventTimestampAssigner());
-
-        DataStream<{{OUTPUT_EVENT_NAME}}> outputEvents = parsedEvents
-                .assignTimestampsAndWatermarks(watermarkStrategy)
-                .keyBy(event -> event.getField("{{KEY_BY}}"))
-                .process(new RuleProcessFunction(
-                        "{{RULE_TYPE}}",
-                        "{{RULE_CONDITION}}",
-                        "{{EVENT_TIME_FIELD}}",
-                        {{TIME_WINDOW_MINUTES}}L));
+        DataStream<{{OUTPUT_EVENT_NAME}}> outputEvents =
+                inputEvents
+                        .keyBy(event -> event.getField("{{KEY_BY}}"))
+                        .process(new RuleProcessFunction(
+                                "{{RULE_TYPE}}",
+                                "{{RULE_CONDITION}}",
+                                "{{EVENT_TIME_FIELD}}",
+                                {{TIME_WINDOW_MINUTES}}L));
 
         outputEvents
                 .map({{OUTPUT_EVENT_NAME}}::toJson)
-                .sinkTo(sink);
+                .sinkTo(buildSink());
 
         env.execute("{{JOB_NAME}}");
     }
@@ -84,13 +78,19 @@ final class JobTemplate {
                 .build();
     }
 
+    private static WatermarkStrategy<{{INPUT_EVENT_NAME}}> buildWatermarkStrategy() {
+        return WatermarkStrategy
+                .<{{INPUT_EVENT_NAME}}>forBoundedOutOfOrderness(ALLOWED_LATENESS)
+                .withTimestampAssigner(new EventTimeAssigner());
+    }
+
     /**
-     * Extract the event time configured through `{{EVENT_TIME_FIELD}}`.
+     * Read the configured event-time field from the input record.
      *
-     * <p>If the field cannot be parsed, the record timestamp is used as a fallback so the
-     * generated starter remains runnable.
+     * <p>If parsing fails, the record timestamp is used as a fallback so the generated starter
+     * stays simple and coherent.
      */
-    private static final class EventTimestampAssigner
+    private static final class EventTimeAssigner
             implements SerializableTimestampAssigner<{{INPUT_EVENT_NAME}}> {
 
         @Override
