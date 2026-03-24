@@ -1,20 +1,26 @@
 # Extract Flink Job Spec
 
-You are given a natural-language request for a Flink job.
+Convert a natural-language Flink job request into the internal `FlinkJobSpec`.
 
-Extract a structured payload with these fields:
+Return only the following fields:
 
-- `template_id`
 - `job_name`
-- `job_class_name`
-- `package_name`
-- `input_topic`
-- `output_topic`
-- `consumer_group`
-- `key_field`
-- `rule_expression`
-- `bootstrap_servers`
-- `input_schema_class`
-- `output_schema_class`
+- `source_topic`
+- `sink_topic`
+- `key_by`
+- `event_time_field`
+- `input_event_name`
+- `output_event_name`
+- `rule_type`
+- `rule_condition`
+- `time_window_minutes`
 
-The only valid `template_id` is `flink_kafka_rule_job`.
+Current scope rules:
+
+- Support Kafka-based jobs only
+- Support only `rule_type = "two_events_within_window"`
+- `job_name` must be filesystem-safe
+- Topics must not be empty
+- `time_window_minutes` must be positive
+
+If the request is ambiguous, normalize it into the smallest valid spec that fits the first-version template.
