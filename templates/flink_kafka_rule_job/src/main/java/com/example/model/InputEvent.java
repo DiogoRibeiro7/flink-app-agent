@@ -4,6 +4,12 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Placeholder input event for {{INPUT_EVENT_NAME}}.
+ *
+ * <p>The generated template uses a minimal parser so the wiring stays understandable. Replace this
+ * with a real schema-aware parser when integrating with actual Kafka payloads.
+ */
 public class {{INPUT_EVENT_NAME}} {
     private final Map<String, String> fields;
     private final String rawPayload;
@@ -14,8 +20,7 @@ public class {{INPUT_EVENT_NAME}} {
     }
 
     /**
-     * Minimal parser for the template. It accepts a string in the form
-     * {@code key=value,key=value}. Real generated projects can replace this with JSON parsing.
+     * Parse a simple comma-separated `key=value` payload into a map-backed event.
      */
     public static {{INPUT_EVENT_NAME}} fromRaw(String rawPayload) {
         Map<String, String> parsedFields = new HashMap<>();

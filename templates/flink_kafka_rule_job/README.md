@@ -1,41 +1,47 @@
 # {{JOB_NAME}}
 
-This directory is a reusable Flink template for a Kafka-to-Kafka keyed rule job.
-It is intentionally small and meant to be filled by `flink-app-agent`, not used as a
-finished production application.
+This project was generated from the single built-in `flink_kafka_rule_job` template in
+`flink-app-agent`.
 
-## Injected Placeholders
+It is a small starter for a Kafka-to-Kafka Flink DataStream job that:
 
-The generator replaces the following placeholders in text files:
+- reads events from `{{SOURCE_TOPIC}}`
+- extracts event time from `{{EVENT_TIME_FIELD}}`
+- assigns watermarks
+- partitions the stream with `keyBy({{KEY_BY}})`
+- applies a `KeyedProcessFunction`
+- writes derived `{{OUTPUT_EVENT_NAME}}` events to `{{SINK_TOPIC}}`
 
-- `{{JOB_NAME}}`
-- `{{SOURCE_TOPIC}}`
-- `{{SINK_TOPIC}}`
-- `{{KEY_BY}}`
-- `{{EVENT_TIME_FIELD}}`
-- `{{INPUT_EVENT_NAME}}`
-- `{{OUTPUT_EVENT_NAME}}`
-- `{{RULE_TYPE}}`
-- `{{RULE_CONDITION}}`
-- `{{TIME_WINDOW_MINUTES}}`
+## Injected Values
 
-## Template Notes
+The generator replaced these placeholders when this project was created:
 
-- `JobTemplate.java` defines the Flink DataStream job, Kafka source and sink wiring,
-  and watermark assignment.
-- `InputEvent.java` and `OutputEvent.java` are placeholder event models with simple
-  parsing and serialization helpers.
-- `RuleProcessFunction.java` shows where keyed state and timer logic belong.
-- `RuleProcessFunctionTest.java` is a lightweight scaffold around the process function.
+- `{{JOB_NAME}}`: generated job and artifact name
+- `{{SOURCE_TOPIC}}`: Kafka source topic
+- `{{SINK_TOPIC}}`: Kafka sink topic
+- `{{KEY_BY}}`: key field used before the process function
+- `{{EVENT_TIME_FIELD}}`: event-time field used for timestamps and timers
+- `{{INPUT_EVENT_NAME}}`: generated input event model class
+- `{{OUTPUT_EVENT_NAME}}`: generated output event model class
+- `{{RULE_TYPE}}`: currently supported rule type
+- `{{RULE_CONDITION}}`: human-readable rule description
+- `{{TIME_WINDOW_MINUTES}}`: keyed matching window
 
-## Generated Values In This Template
+## Generated Structure
 
-- Source topic: `{{SOURCE_TOPIC}}`
-- Sink topic: `{{SINK_TOPIC}}`
-- Key field: `{{KEY_BY}}`
-- Event time field: `{{EVENT_TIME_FIELD}}`
-- Input event name: `{{INPUT_EVENT_NAME}}`
-- Output event name: `{{OUTPUT_EVENT_NAME}}`
-- Rule type: `{{RULE_TYPE}}`
-- Rule condition: `{{RULE_CONDITION}}`
-- Time window minutes: `{{TIME_WINDOW_MINUTES}}`
+- `src/main/java/com/example/JobTemplate.java`
+  Main Flink job wiring: source, timestamp extraction, watermark strategy, `keyBy`, process function, and sink.
+- `src/main/java/com/example/model/InputEvent.java`
+  Minimal input event parser and accessors.
+- `src/main/java/com/example/model/OutputEvent.java`
+  Minimal output event model and serializer.
+- `src/main/java/com/example/functions/RuleProcessFunction.java`
+  Keyed process function skeleton with state and timer hooks.
+- `src/test/java/com/example/RuleProcessFunctionTest.java`
+  Lightweight process-function test scaffold.
+
+## Notes
+
+- Kafka parsing is intentionally simplified.
+- State and timer handling are shown, but business rule behavior is still scaffolding.
+- `localhost:9092` is used as a placeholder bootstrap server in the generated code.

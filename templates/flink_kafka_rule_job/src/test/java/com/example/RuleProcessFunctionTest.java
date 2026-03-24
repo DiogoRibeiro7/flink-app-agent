@@ -3,13 +3,21 @@ package com.example;
 import com.example.functions.RuleProcessFunction;
 import com.example.model.{{INPUT_EVENT_NAME}};
 import com.example.model.{{OUTPUT_EVENT_NAME}};
+import java.util.Map;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.operators.KeyedProcessOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.streaming.runtime.streamrecord.Watermark;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Lightweight scaffold around the generated process function.
+ *
+ * <p>This test does not try to validate business semantics beyond the current starter behavior.
+ * It proves that two events for the same key inside the configured window can produce an output.
+ */
 public class RuleProcessFunctionTest {
 
     @Test
@@ -29,23 +37,24 @@ public class RuleProcessFunctionTest {
                         Types.STRING);
 
         harness.open();
-        harness.processWatermark(0L);
+        harness.processWatermark(new Watermark(0L));
         harness.processElement(
                 new {{INPUT_EVENT_NAME}}(
-                        java.util.Map.of("{{KEY_BY}}", "acct-1", "{{EVENT_TIME_FIELD}}", "1000"),
+                        Map.of("{{KEY_BY}}", "acct-1", "{{EVENT_TIME_FIELD}}", "1_000".replace("_", "")),
                         "{{KEY_BY}}=acct-1,{{EVENT_TIME_FIELD}}=1000"),
                 1_000L);
         harness.processElement(
                 new {{INPUT_EVENT_NAME}}(
-                        java.util.Map.of("{{KEY_BY}}", "acct-1", "{{EVENT_TIME_FIELD}}", "2000"),
+                        Map.of("{{KEY_BY}}", "acct-1", "{{EVENT_TIME_FIELD}}", "2_000".replace("_", "")),
                         "{{KEY_BY}}=acct-1,{{EVENT_TIME_FIELD}}=2000"),
                 2_000L);
 
         Assertions.assertFalse(harness.extractOutputValues().isEmpty());
 
         StreamRecord<{{OUTPUT_EVENT_NAME}}> record =
-                (StreamRecord<{{OUTPUT_EVENT_NAME}}>) harness.getOutput().peek();
+                (StreamRecord<{{OUTPUT_EVENT_NAME}}) harness.getOutput().peek();
         Assertions.assertNotNull(record);
         Assertions.assertTrue(record.getValue().toJson().contains("{{RULE_TYPE}}"));
+        Assertions.assertTrue(record.getValue().toJson().contains("{{RULE_CONDITION}}"));
     }
 }
