@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
         print_parsed_spec(spec)
 
         generated_files = generate_project(spec, Path(args.output))
-        print_success_summary(spec, Path(args.output), generated_files)
+        print_success_summary(Path(args.output), generated_files)
     except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -74,9 +74,8 @@ def print_parsed_spec(spec: FlinkJobSpec) -> None:
     print()
 
 
-def print_success_summary(spec: FlinkJobSpec, output_dir: Path, generated_files: list[Path]) -> None:
+def print_success_summary(output_dir: Path, generated_files: list[Path]) -> None:
     """Print a small success summary including generated files."""
-    del spec
     print(f"Generated project in: {output_dir}")
     print("Generated files:")
     for path in generated_files:

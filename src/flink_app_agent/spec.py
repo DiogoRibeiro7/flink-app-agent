@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 
 FILESYSTEM_SAFE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -53,10 +53,10 @@ class FlinkJobSpec(BaseModel):
         "rule_condition",
     )
     @classmethod
-    def validate_not_empty(cls, value: str) -> str:
+    def validate_not_empty(cls, value: str, info: ValidationInfo) -> str:
         """Reject blank values for required string fields."""
         if not value:
-            raise ValueError("Field must not be empty.")
+            raise ValueError(f"{info.field_name} must not be empty.")
         return value
 
     @classmethod

@@ -22,7 +22,7 @@ def test_generator_copies_template_replaces_text_and_renames_classes(tmp_path: P
     generated_files = generator.generate(FlinkJobSpec.demo(), output_dir)
 
     readme_path = output_dir / "README.md"
-    job_file_path = output_dir / "src" / "main" / "java" / "FraudAlertJobJob.java"
+    job_file_path = output_dir / "src" / "main" / "java" / "FraudAlertJob.java"
     input_file_path = output_dir / "src" / "main" / "java" / "PaymentEvent.java"
     output_file_path = output_dir / "src" / "main" / "java" / "AlertEvent.java"
     binary_file_path = output_dir / "assets" / "logo.bin"

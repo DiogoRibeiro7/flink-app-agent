@@ -3,11 +3,12 @@ name = "flink-app-agent"
 version = "0.1.0"
 description = "A small agent that converts plain-English Flink requests into a structured spec and a generated project."
 authors = ["Diogo <diogo@example.com>"]
+license = "MIT"
 readme = "README.md"
 packages = [{ include = "flink_app_agent", from = "src" }]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<4.0"
 pydantic = "^2.11.0"
 
 [tool.poetry.group.dev.dependencies]
@@ -15,6 +16,10 @@ pytest = "^8.3.0"
 
 [tool.poetry.scripts]
 flink-app-agent = "flink_app_agent.main:main"
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
 
 [build-system]
 requires = ["poetry-core>=1.9.0"]

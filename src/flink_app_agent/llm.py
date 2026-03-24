@@ -29,7 +29,7 @@ def load_prompt(prompt_name: str) -> str:
     """Load a prompt file from the package prompt directory."""
     prompt_path = PROMPTS_DIR / prompt_name
     if not prompt_path.exists():
-        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+        raise FileNotFoundError(f"Prompt file not found in prompts directory: {prompt_name}")
     return prompt_path.read_text(encoding="utf-8")
 
 
