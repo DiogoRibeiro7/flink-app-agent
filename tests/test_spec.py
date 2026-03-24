@@ -1,4 +1,4 @@
-"""Tests for the Flink job spec model and stub extraction."""
+"""Tests for the strict Flink job specification model."""
 
 from __future__ import annotations
 
@@ -6,52 +6,77 @@ import sys
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.llm import StubLLMClient
-from flink_app_agent.spec import FlinkJobSpec
+from flink_app_agent.spec import ALLOWED_RULE_TYPE, FlinkJobSpec
 
 
-def test_stub_llm_extracts_basic_fields() -> None:
-    """The stub extractor should populate the main fields from plain English."""
-    client = StubLLMClient()
-    payload = client.extract_spec(
-        prompt="ignored",
-        request=(
-            "Create a Flink job named fraud detector that reads from topic payments, "
-            "writes to topic alerts, keys by account_id, uses consumer group fraud-group, "
-            "and emits an alert when amount > 5000."
-        ),
-    )
+def test_demo_factory_returns_valid_spec() -> None:
+    """The demo helper should build a valid first-version spec."""
+    spec = FlinkJobSpec.demo()
 
-    spec = FlinkJobSpec.from_llm_payload(payload)
-
-    assert spec.job_name == "fraud detector"
-    assert spec.input_topic == "payments"
-    assert spec.output_topic == "alerts"
-    assert spec.key_field == "account_id"
-    assert spec.consumer_group == "fraud-group"
-    assert spec.rule_expression == "amount > 5000"
-    assert spec.job_class_name == "FraudDetector"
+    assert spec.job_name == "fraud-alert-job"
+    assert spec.rule_type == ALLOWED_RULE_TYPE
+    assert spec.time_window_minutes == 10
 
 
-def test_spec_rejects_invalid_template() -> None:
-    """Only the single supported template should validate."""
-    with pytest.raises(ValueError):
-        FlinkJobSpec.from_llm_payload(
-            {
-                "template_id": "another_template",
-                "job_name": "job",
-                "job_class_name": "Job",
-                "package_name": "com.example",
-                "input_topic": "in",
-                "output_topic": "out",
-                "consumer_group": "group",
-                "key_field": "userId",
-                "rule_expression": "x > 0",
-                "bootstrap_servers": "localhost:9092",
-                "input_schema_class": "InputEvent",
-                "output_schema_class": "OutputEvent",
-            }
-        )
+def test_template_dict_is_ready_for_substitution() -> None:
+    """The template dictionary should expose plain string values."""
+    spec = FlinkJobSpec.demo()
+
+    assert spec.to_template_dict() == {
+        "JOB_NAME": "fraud-alert-job",
+        "SOURCE_TOPIC": "payments",
+        "SINK_TOPIC": "alerts",
+        "KEY_BY": "account_id",
+        "EVENT_TIME_FIELD": "event_time",
+        "INPUT_EVENT_NAME": "PaymentEvent",
+        "OUTPUT_EVENT_NAME": "AlertEvent",
+        "RULE_TYPE": "two_events_within_window",
+        "RULE_CONDITION": "second payment occurs within 10 minutes with amount > 5000",
+        "TIME_WINDOW_MINUTES": "10",
+    }
+
+
+def test_job_name_must_be_filesystem_safe() -> None:
+    """Invalid filesystem characters should be rejected."""
+    payload = FlinkJobSpec.demo().model_dump()
+    payload["job_name"] = "fraud alert/job"
+
+    with pytest.raises(ValidationError):
+        FlinkJobSpec.model_validate(payload)
+
+
+def test_topics_cannot_be_empty() -> None:
+    """Blank topics should fail validation."""
+    source_payload = FlinkJobSpec.demo().model_dump()
+    source_payload["source_topic"] = "   "
+
+    with pytest.raises(ValidationError):
+        FlinkJobSpec.model_validate(source_payload)
+
+    sink_payload = FlinkJobSpec.demo().model_dump()
+    sink_payload["sink_topic"] = ""
+
+    with pytest.raises(ValidationError):
+        FlinkJobSpec.model_validate(sink_payload)
+
+
+def test_time_window_minutes_must_be_positive() -> None:
+    """The time window must be greater than zero."""
+    payload = FlinkJobSpec.demo().model_dump()
+    payload["time_window_minutes"] = 0
+
+    with pytest.raises(ValidationError):
+        FlinkJobSpec.model_validate(payload)
+
+
+def test_rule_type_is_restricted() -> None:
+    """Only the single supported rule type should validate."""
+    payload = FlinkJobSpec.demo().model_dump()
+    payload["rule_type"] = "threshold"
+
+    with pytest.raises(ValidationError):
+        FlinkJobSpec.model_validate(payload)
