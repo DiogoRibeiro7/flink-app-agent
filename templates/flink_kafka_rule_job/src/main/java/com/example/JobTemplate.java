@@ -1,8 +1,11 @@
-package {{PACKAGE_NAME}};
+package com.example;
 
-import {{PACKAGE_NAME}}.functions.RuleProcessFunction;
-import {{PACKAGE_NAME}}.model.InputEvent;
-import {{PACKAGE_NAME}}.model.OutputEvent;
+import com.example.functions.RuleProcessFunction;
+import com.example.model.{{INPUT_EVENT_NAME}};
+import com.example.model.{{OUTPUT_EVENT_NAME}};
+import java.time.Duration;
+import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
@@ -11,43 +14,65 @@ import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsIni
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
-public class {{JOB_CLASS_NAME}} {
+final class JobTemplate {
+
+    private JobTemplate() {
+    }
 
     public static void main(String[] args) throws Exception {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         KafkaSource<String> source = KafkaSource.<String>builder()
-                .setBootstrapServers("{{BOOTSTRAP_SERVERS}}")
-                .setTopics("{{INPUT_TOPIC}}")
-                .setGroupId("{{CONSUMER_GROUP}}")
-                .setStartingOffsets(OffsetsInitializer.latest())
+                .setBootstrapServers("localhost:9092")
+                .setTopics("{{SOURCE_TOPIC}}")
+                .setGroupId("{{JOB_NAME}}-consumer")
+                .setStartingOffsets(OffsetsInitializer.earliest())
                 .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
 
         KafkaSink<String> sink = KafkaSink.<String>builder()
-                .setBootstrapServers("{{BOOTSTRAP_SERVERS}}")
+                .setBootstrapServers("localhost:9092")
                 .setRecordSerializer(
                         KafkaRecordSerializationSchema.builder()
-                                .setTopic("{{OUTPUT_TOPIC}}")
+                                .setTopic("{{SINK_TOPIC}}")
                                 .setValueSerializationSchema(new SimpleStringSchema())
                                 .build())
                 .build();
 
-        DataStream<String> sourceStream = env.fromSource(
-                source,
-                org.apache.flink.api.common.eventtime.WatermarkStrategy.noWatermarks(),
-                "{{JOB_NAME}}-source");
+        WatermarkStrategy<{{INPUT_EVENT_NAME}}> watermarkStrategy =
+                WatermarkStrategy
+                        .<{{INPUT_EVENT_NAME}}>forBoundedOutOfOrderness(Duration.ofSeconds(30))
+                        .withTimestampAssigner(new EventTimestampAssigner());
 
-        DataStream<InputEvent> parsedStream = sourceStream.map(InputEvent::fromJson);
-
-        DataStream<OutputEvent> outputStream = parsedStream
-                .keyBy(event -> event.getKey("{{KEY_FIELD}}"))
-                .process(new RuleProcessFunction("{{RULE_EXPRESSION}}"));
+        DataStream<{{OUTPUT_EVENT_NAME}}> outputStream = env
+                .fromSource(source, WatermarkStrategy.noWatermarks(), "{{JOB_NAME}}-source")
+                .map({{INPUT_EVENT_NAME}}::fromRaw)
+                .assignTimestampsAndWatermarks(watermarkStrategy)
+                .keyBy(event -> event.getField("{{KEY_BY}}"))
+                .process(
+                        new RuleProcessFunction(
+                                "{{RULE_TYPE}}",
+                                "{{RULE_CONDITION}}",
+                                "{{EVENT_TIME_FIELD}}",
+                                {{TIME_WINDOW_MINUTES}}L));
 
         outputStream
-                .map(OutputEvent::toJson)
+                .map({{OUTPUT_EVENT_NAME}}::toJson)
                 .sinkTo(sink);
 
         env.execute("{{JOB_NAME}}");
+    }
+
+    /**
+     * Reads event time from the configured placeholder field. The template keeps parsing simple
+     * and falls back to the current watermark clock if the field is missing or invalid.
+     */
+    private static final class EventTimestampAssigner
+            implements SerializableTimestampAssigner<{{INPUT_EVENT_NAME}}> {
+
+        @Override
+        public long extractTimestamp({{INPUT_EVENT_NAME}} element, long recordTimestamp) {
+            return element.getEventTimeMillis("{{EVENT_TIME_FIELD}}", recordTimestamp);
+        }
     }
 }

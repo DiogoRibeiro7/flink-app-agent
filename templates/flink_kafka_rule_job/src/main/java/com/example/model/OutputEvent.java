@@ -1,21 +1,24 @@
-package {{PACKAGE_NAME}}.model;
+package com.example.model;
 
-public class OutputEvent {
+public class {{OUTPUT_EVENT_NAME}} {
     private final String key;
-    private final String status;
-    private final String message;
+    private final String ruleType;
+    private final String ruleCondition;
+    private final long matchedAt;
 
-    public OutputEvent(String key, String status, String message) {
+    public {{OUTPUT_EVENT_NAME}}(String key, String ruleType, String ruleCondition, long matchedAt) {
         this.key = key;
-        this.status = status;
-        this.message = message;
+        this.ruleType = ruleType;
+        this.ruleCondition = ruleCondition;
+        this.matchedAt = matchedAt;
     }
 
     public String toJson() {
         return String.format(
-                "{\"key\":\"%s\",\"status\":\"%s\",\"message\":\"%s\"}",
+                "{\"key\":\"%s\",\"ruleType\":\"%s\",\"ruleCondition\":\"%s\",\"matchedAt\":%d}",
                 key,
-                status,
-                message);
+                ruleType,
+                ruleCondition,
+                matchedAt);
     }
 }
