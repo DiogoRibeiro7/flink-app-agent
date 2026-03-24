@@ -19,7 +19,7 @@ from flink_app_agent.generator import (
     TemplateSelectionError,
     select_template_for_spec,
 )
-from flink_app_agent.spec import ALLOWED_RULE_TYPE, FlinkJobSpec
+from flink_app_agent.spec import ALLOWED_AGGREGATION_TYPE, ALLOWED_RULE_TYPE, FlinkJobSpec
 
 
 def test_generator_copies_template_replaces_text_and_renames_classes(tmp_path: Path) -> None:
@@ -112,19 +112,26 @@ def test_generator_rejects_output_path_with_file_parent(tmp_path: Path) -> None:
 def test_template_catalog_builds_registered_template_metadata(tmp_path: Path) -> None:
     """Template registration should be explicit even with one real template."""
     catalog = TemplateCatalog.from_root(tmp_path)
-    template = catalog.get("flink_kafka_rule_job")
+    rule_template = catalog.get("flink_kafka_rule_job")
+    aggregation_template = catalog.get("flink_windowed_aggregation_job")
 
-    assert template.name == "flink_kafka_rule_job"
-    assert template.template_path == tmp_path / "flink_kafka_rule_job"
-    assert template.supported_rule_types == frozenset({ALLOWED_RULE_TYPE})
+    assert rule_template.name == "flink_kafka_rule_job"
+    assert rule_template.template_path == tmp_path / "flink_kafka_rule_job"
+    assert rule_template.supported_rule_types == frozenset({ALLOWED_RULE_TYPE})
+    assert aggregation_template.name == "flink_windowed_aggregation_job"
+    assert aggregation_template.template_path == tmp_path / "flink_windowed_aggregation_job"
+    assert aggregation_template.supported_rule_types == frozenset({ALLOWED_AGGREGATION_TYPE})
 
 
 def test_select_template_for_spec_returns_registered_template(tmp_path: Path) -> None:
     """Specs should select the matching registered template explicitly."""
-    template = select_template_for_spec(FlinkJobSpec.demo(), tmp_path)
+    rule_template = select_template_for_spec(FlinkJobSpec.demo(), tmp_path)
+    aggregation_template = select_template_for_spec(FlinkJobSpec.demo_windowed_aggregation(), tmp_path)
 
-    assert template.name == "flink_kafka_rule_job"
-    assert template.template_path == tmp_path / "flink_kafka_rule_job"
+    assert rule_template.name == "flink_kafka_rule_job"
+    assert rule_template.template_path == tmp_path / "flink_kafka_rule_job"
+    assert aggregation_template.name == "flink_windowed_aggregation_job"
+    assert aggregation_template.template_path == tmp_path / "flink_windowed_aggregation_job"
 
 
 def test_template_catalog_rejects_unknown_template_name(tmp_path: Path) -> None:

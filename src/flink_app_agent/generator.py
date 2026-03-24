@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import re
 
-from .spec import FlinkJobSpec
+from .spec import ALLOWED_AGGREGATION_TYPE, ALLOWED_RULE_TYPE, FlinkJobSpec
 from .utils import to_pascal_case
 
 
@@ -112,7 +112,12 @@ class TemplateCatalog:
                 TemplateMetadata(
                     name="flink_kafka_rule_job",
                     template_path=templates_root / "flink_kafka_rule_job",
-                    supported_rule_types=frozenset({"two_events_within_window"}),
+                    supported_rule_types=frozenset({ALLOWED_RULE_TYPE}),
+                ),
+                TemplateMetadata(
+                    name="flink_windowed_aggregation_job",
+                    template_path=templates_root / "flink_windowed_aggregation_job",
+                    supported_rule_types=frozenset({ALLOWED_AGGREGATION_TYPE}),
                 ),
             )
         )

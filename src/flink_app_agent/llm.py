@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from .spec import ALLOWED_RULE_TYPE, FlinkJobSpec
+from .spec import ALLOWED_AGGREGATION_TYPE, ALLOWED_RULE_TYPE, FlinkJobSpec
 from .utils import slugify, to_pascal_case
 
 
@@ -119,6 +119,10 @@ class StubSpecPayloadExtractor:
     default_sink_topic: str = "output-topic"
     default_event_time_field: str = "event_time"
     default_input_event_name: str = "InputEvent"
+    default_aggregation_output_event_name: str = "WindowedCount"
+    generic_output_event_names: frozenset[str] = frozenset(
+        {"Result", "Results", "Output", "Outputs", "Event", "Events"}
+    )
 
     def extract_payload(self, request: str, prompt: str) -> dict[str, Any]:
         """Parse a narrow request pattern into a raw structured payload."""
@@ -126,6 +130,13 @@ class StubSpecPayloadExtractor:
 
         # TODO: Replace this deterministic parser with a real prompt-driven LLM call.
         # TODO: Pass the contents of extract_spec.md into the future model request.
+        if self._is_windowed_aggregation_request(request):
+            return self._extract_windowed_aggregation_payload(request)
+
+        return self._extract_keyed_rule_payload(request)
+
+    def _extract_keyed_rule_payload(self, request: str) -> dict[str, Any]:
+        """Extract the existing keyed-rule job payload."""
         source_topic = self._extract_source_topic(request)
         key_by = self._extract_key_by(request)
         output_event_name, inferred_sink_topic = self._extract_output_and_sink(request)
@@ -167,6 +178,70 @@ class StubSpecPayloadExtractor:
             "time_window_minutes": window_minutes,
         }
 
+    def _extract_windowed_aggregation_payload(self, request: str) -> dict[str, Any]:
+        """Extract a payload for the supported windowed aggregation family."""
+        source_topic = self._extract_source_topic(request)
+        key_by = self._extract_key_by(request)
+        window_minutes = self._extract_window_minutes(request)
+        sink_topic = self._extract_optional_match(
+            request,
+            self._sink_topic_patterns(),
+            default=self.default_sink_topic,
+        )
+        event_time_field = self._extract_optional_match(
+            request,
+            self._event_time_patterns(),
+            default=self.default_event_time_field,
+        )
+        raw_job_name = self._extract_optional_match(
+            request,
+            [
+                r"(?:job name|job called|job named) ([A-Za-z0-9 _.-]+?)(?: with| using| that|,|\.|$)",
+                r"build a flink (?:aggregation )?job called ([A-Za-z0-9 _.-]+?)(?: with| using| that|,|\.|$)",
+            ],
+            f"{source_topic} windowed count job",
+        )
+        output_event_name = self._normalize_or_default_aggregation_output_name(
+            self._extract_optional_match(
+                request,
+                [
+                    r"writes? ([A-Za-z0-9 _-]+) to ([A-Za-z0-9._-]+?)(?:[.,]|$)",
+                    r"emit[s]? ([A-Za-z0-9 _-]+) to ([A-Za-z0-9._-]+?)(?:[.,]|$)",
+                ],
+                default=self.default_aggregation_output_event_name,
+            )
+        )
+        if output_event_name == self.default_aggregation_output_event_name:
+            sink_match = re.search(
+                r"(?:writes?|publish(?:es)?) [A-Za-z0-9 _-]+? to ([A-Za-z0-9._-]+?)(?:[.,]|$)",
+                request,
+                flags=re.IGNORECASE,
+            )
+            if sink_match is not None:
+                sink_topic = sink_match.group(1).strip()
+
+        return {
+            "job_name": slugify(raw_job_name),
+            "source_topic": source_topic,
+            "sink_topic": sink_topic,
+            "key_by": key_by,
+            "event_time_field": event_time_field,
+            "input_event_name": self.default_input_event_name,
+            "output_event_name": output_event_name,
+            "rule_type": ALLOWED_AGGREGATION_TYPE,
+            "rule_condition": f"count events by {key_by} in {window_minutes} minute windows",
+            "time_window_minutes": window_minutes,
+        }
+
+    def _is_windowed_aggregation_request(self, request: str) -> bool:
+        """Return whether the request clearly describes windowed aggregation."""
+        lowered = request.lower()
+        return (
+            ("count" in lowered or "aggregation" in lowered or "aggregate" in lowered)
+            and ("window" in lowered or "every" in lowered or "within" in lowered)
+            and "emit" not in lowered
+        )
+
     def _extract_source_topic(self, request: str) -> str:
         """Extract the Kafka source topic from a supported wording variant."""
         return self._extract_required_match(
@@ -184,6 +259,7 @@ class StubSpecPayloadExtractor:
                 r"keyed by ([A-Za-z0-9_.-]+)",
                 r"group by ([A-Za-z0-9_.-]+)",
                 r"groups by ([A-Za-z0-9_.-]+)",
+                r"count [A-Za-z0-9._-]+ by ([A-Za-z0-9_.-]+)",
             ],
             "Unable to parse key_by. Supported variants include 'key by <field>' or 'group(s) by <field>'.",
         )
@@ -215,8 +291,10 @@ class StubSpecPayloadExtractor:
             request,
             [
                 r"within (\d+) minutes",
+                r"every (\d+) minutes",
                 r"within a (\d+) minute window",
                 r"over a (\d+) minute window",
+                r"in (\d+) minute windows",
             ],
             "Unable to parse time_window_minutes. Supported variants include 'within <N> minutes'.",
         )
@@ -254,6 +332,8 @@ class StubSpecPayloadExtractor:
             r"from kafka topic ([A-Za-z0-9._-]+)",
             r"from topic ([A-Za-z0-9._-]+)",
             r"consume ([A-Za-z0-9._-]+)",
+            r"\bcount ([A-Za-z0-9._-]+) by",
+            r"\bcount ([A-Za-z0-9._-]+) every",
             r"reads? from ([A-Za-z0-9._-]+)",
             r"reads? ([A-Za-z0-9._-]+)",
         ]
@@ -263,7 +343,8 @@ class StubSpecPayloadExtractor:
         return [
             r"sink topic ([A-Za-z0-9._-]+)",
             r"to inferred topic ([A-Za-z0-9._-]+)",
-            r"to ([A-Za-z0-9._-]+)",
+            r"to topic ([A-Za-z0-9._-]+)",
+            r"to ([A-Za-z0-9._-]+?)(?:[.,]|$)",
         ]
 
     def _event_time_patterns(self) -> list[str]:
@@ -279,6 +360,13 @@ class StubSpecPayloadExtractor:
         if re.fullmatch(r"[A-Z][A-Za-z0-9]*", value):
             return value
         return to_pascal_case(value)
+
+    def _normalize_or_default_aggregation_output_name(self, value: str) -> str:
+        """Normalize aggregation output names and keep generic sink wording on the default."""
+        normalized = self._normalize_event_name(value)
+        if normalized in self.generic_output_event_names:
+            return self.default_aggregation_output_event_name
+        return normalized
 
 
 @dataclass(frozen=True)

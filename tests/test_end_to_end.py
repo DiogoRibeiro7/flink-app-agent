@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from flink_app_agent.generator import ProjectGenerator, select_template_for_spec
 from flink_app_agent.llm import build_default_extraction_service
+from flink_app_agent.review import PostGenerationReviewer
 
 
 def test_sensor_job_request_generates_expected_project(tmp_path: Path) -> None:
@@ -39,6 +40,7 @@ def test_sensor_job_request_generates_expected_project(tmp_path: Path) -> None:
     output_dir = tmp_path / "sensor-occupancy-alerts"
 
     generated_files = generator.generate(spec=spec, output_dir=output_dir)
+    review_result = PostGenerationReviewer().review(output_dir, spec)
 
     expected_files = {
         output_dir / "README.md",
@@ -51,6 +53,7 @@ def test_sensor_job_request_generates_expected_project(tmp_path: Path) -> None:
     }
 
     assert expected_files.issubset(set(generated_files))
+    assert review_result.success is True
 
     readme_text = (output_dir / "README.md").read_text(encoding="utf-8")
     job_text = (
@@ -72,3 +75,67 @@ def test_sensor_job_request_generates_expected_project(tmp_path: Path) -> None:
     assert "event_ts" in job_text
     assert "occupancy-alerts" in job_text
     assert "class BedOut" in output_event_text
+
+
+def test_windowed_aggregation_request_generates_expected_project(tmp_path: Path) -> None:
+    """A realistic aggregation request should select the aggregation template and render it."""
+    request = (
+        "Build a Flink aggregation job that reads sensor-events, groups by user_id, "
+        "counts events in 5 minute windows, and writes WindowedCount to sensor-counts."
+    )
+    spec = build_default_extraction_service().extract(request)
+
+    assert spec.model_dump() == {
+        "job_name": "sensor-events-windowed-count-job",
+        "source_topic": "sensor-events",
+        "sink_topic": "sensor-counts",
+        "key_by": "user_id",
+        "event_time_field": "event_time",
+        "input_event_name": "InputEvent",
+        "output_event_name": "WindowedCount",
+        "rule_type": "count_by_key_window",
+        "rule_condition": "count events by user_id in 5 minute windows",
+        "time_window_minutes": 5,
+    }
+
+    repo_root = Path(__file__).resolve().parents[1]
+    template = select_template_for_spec(spec, repo_root / "templates")
+
+    assert template.name == "flink_windowed_aggregation_job"
+
+    generator = ProjectGenerator(template_dir=template.template_path)
+    output_dir = tmp_path / "sensor-events-windowed-count-job"
+    generated_files = generator.generate(spec=spec, output_dir=output_dir)
+    review_result = PostGenerationReviewer().review(output_dir, spec)
+
+    expected_files = {
+        output_dir / "README.md",
+        output_dir / "pom.xml",
+        output_dir / "src" / "main" / "java" / "com" / "example" / "SensorEventsWindowedCountJob.java",
+        output_dir / "src" / "main" / "java" / "com" / "example" / "model" / "InputEvent.java",
+        output_dir / "src" / "main" / "java" / "com" / "example" / "model" / "WindowedCount.java",
+        output_dir / "src" / "main" / "java" / "com" / "example" / "functions" / "WindowedCountProcessWindowFunction.java",
+    }
+
+    assert expected_files.issubset(set(generated_files))
+    assert review_result.success is True
+
+    readme_text = (output_dir / "README.md").read_text(encoding="utf-8")
+    job_text = (
+        output_dir / "src" / "main" / "java" / "com" / "example" / "SensorEventsWindowedCountJob.java"
+    ).read_text(encoding="utf-8")
+    output_event_text = (
+        output_dir / "src" / "main" / "java" / "com" / "example" / "model" / "WindowedCount.java"
+    ).read_text(encoding="utf-8")
+
+    assert "sensor-events-windowed-count-job" in readme_text
+    assert "sensor-events" in readme_text
+    assert "sensor-counts" in readme_text
+    assert "{{JOB_NAME}}" not in readme_text
+    assert "{{SOURCE_TOPIC}}" not in job_text
+    assert "{{SINK_TOPIC}}" not in job_text
+    assert "{{KEY_BY}}" not in job_text
+    assert "{{TIME_WINDOW_MINUTES}}" not in job_text
+    assert "user_id" in job_text
+    assert "sensor-counts" in job_text
+    assert "class WindowedCount" in output_event_text

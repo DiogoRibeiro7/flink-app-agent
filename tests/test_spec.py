@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.spec import ALLOWED_RULE_TYPE, FlinkJobSpec
+from flink_app_agent.spec import ALLOWED_AGGREGATION_TYPE, ALLOWED_RULE_TYPE, FlinkJobSpec
 
 
 def test_demo_factory_returns_valid_spec() -> None:
@@ -20,6 +20,15 @@ def test_demo_factory_returns_valid_spec() -> None:
     assert spec.job_name == "fraud-alert-job"
     assert spec.rule_type == ALLOWED_RULE_TYPE
     assert spec.time_window_minutes == 10
+
+
+def test_windowed_aggregation_demo_returns_valid_spec() -> None:
+    """The aggregation demo helper should build a valid second-family spec."""
+    spec = FlinkJobSpec.demo_windowed_aggregation()
+
+    assert spec.rule_type == ALLOWED_AGGREGATION_TYPE
+    assert spec.output_event_name == "WindowedCount"
+    assert spec.time_window_minutes == 5
 
 
 def test_model_normalizes_supported_fields() -> None:

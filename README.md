@@ -5,7 +5,10 @@
 1. a validated internal specification
 2. a generated Java Flink project copied from a local template
 
-The repository is intentionally limited to a single first-version use case: a Kafka-to-Kafka keyed rule job implemented with the Flink DataStream API.
+The repository is intentionally limited to two narrow job families:
+
+- a Kafka-to-Kafka keyed rule job
+- a Kafka-to-Kafka windowed count aggregation job
 
 ## Purpose
 
@@ -26,7 +29,7 @@ Current choices that keep the project small:
 
 - one spec model
 - one deterministic parser instead of a real LLM call
-- one local template directory
+- two local template directories
 - one CLI entry point
 - no UI, database, Docker setup, or deployment logic
 
@@ -37,8 +40,8 @@ The current flow is:
 1. `main.py` reads a plain-English request and an output path from the CLI
 2. `llm.py` loads `extract_spec.md` and uses a deterministic stub parser
 3. `spec.py` validates the resulting `FlinkJobSpec` with Pydantic
-4. `generator.py` copies `templates/flink_kafka_rule_job/`
-5. `generator.py` replaces supported placeholders in text files and renames template class files
+4. `generator.py` selects a local template based on the validated spec
+5. `generator.py` copies the selected template, replaces supported placeholders, and renames template class files
 
 The parser is not an actual LLM client yet. It only accepts a restricted request pattern and raises a clear parsing error for unsupported inputs.
 
@@ -60,12 +63,8 @@ flink-app-agent/
 │           ├── extract_spec.md
 │           └── generate_code.md
 ├── templates/
-│   └── flink_kafka_rule_job/
-│       ├── pom.xml
-│       ├── README.md
-│       └── src/
-│           ├── main/java/com/example/
-│           └── test/java/com/example/
+│   ├── flink_kafka_rule_job/
+│   └── flink_windowed_aggregation_job/
 └── tests/
     ├── test_generator.py
     ├── test_llm.py
@@ -81,7 +80,7 @@ key by user_id, emit BED_OUT within 20 minutes
 
 ## Example Generated Spec
 
-Given the request above, the current stub parser produces a spec equivalent to:
+Given the keyed-rule request above, the current stub parser produces a spec equivalent to:
 
 ```json
 {
@@ -95,6 +94,30 @@ Given the request above, the current stub parser produces a spec equivalent to:
   "rule_type": "two_events_within_window",
   "rule_condition": "emit BedOut when two keyed events match within 20 minutes",
   "time_window_minutes": 20
+}
+```
+
+Example windowed aggregation request:
+
+```text
+Build a Flink aggregation job that reads sensor-events, groups by user_id,
+counts events in 5 minute windows, and writes WindowedCount to sensor-counts.
+```
+
+Expected windowed aggregation spec:
+
+```json
+{
+  "job_name": "sensor-events-windowed-count-job",
+  "source_topic": "sensor-events",
+  "sink_topic": "sensor-counts",
+  "key_by": "user_id",
+  "event_time_field": "event_time",
+  "input_event_name": "InputEvent",
+  "output_event_name": "WindowedCount",
+  "rule_type": "count_by_key_window",
+  "rule_condition": "count events by user_id in 5 minute windows",
+  "time_window_minutes": 5
 }
 ```
 
@@ -210,8 +233,8 @@ The current implementation is intentionally incomplete.
 
 - No external LLM integration
 - The parser only supports a restricted request pattern
-- Only one template exists
-- Template selection is not implemented
+- Only two narrow templates exist
+- Template selection is explicit but only based on the supported rule types
 - The Java template is a scaffold, not a production-ready Flink application
 - Kafka parsing in the template is simplified
 - Package names and richer Java project customization are not supported
@@ -226,7 +249,7 @@ Reasonable next steps for this repository are:
 2. Align template generation and template internals more tightly around generated class names
 3. Add explicit spec-to-template compatibility checks
 4. Add CLI tests
-5. Add more templates only after the single-template path is stable
+5. Add more templates only after the current two-template path is stable
 6. Add optional Java build verification for generated output
 
 ## Extending The Template System Later

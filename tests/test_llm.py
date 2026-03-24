@@ -23,6 +23,7 @@ from flink_app_agent.llm import (
     build_default_spec_extractor,
     load_prompt,
 )
+from flink_app_agent.spec import ALLOWED_AGGREGATION_TYPE, ALLOWED_RULE_TYPE
 
 
 def test_load_prompt_reads_prompt_file() -> None:
@@ -107,6 +108,30 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
                 "time_window_minutes": 10,
             },
         ),
+        (
+            "Build a Flink aggregation job that reads sensor-events, groups by user_id, counts events in 5 minute windows, and writes WindowedCount to sensor-counts.",
+            {
+                "job_name": "sensor-events-windowed-count-job",
+                "source_topic": "sensor-events",
+                "sink_topic": "sensor-counts",
+                "key_by": "user_id",
+                "event_time_field": "event_time",
+                "output_event_name": "WindowedCount",
+                "time_window_minutes": 5,
+            },
+        ),
+        (
+            "Count sensor-events by device_id every 10 minutes and write results to device-counts.",
+            {
+                "job_name": "sensor-events-windowed-count-job",
+                "source_topic": "sensor-events",
+                "sink_topic": "device-counts",
+                "key_by": "device_id",
+                "event_time_field": "event_time",
+                "output_event_name": "WindowedCount",
+                "time_window_minutes": 10,
+            },
+        ),
     ],
 )
 def test_stub_parser_returns_valid_spec_for_supported_variants(
@@ -134,6 +159,20 @@ def test_stub_parser_returns_valid_spec_for_supported_variants(
     assert first_spec.model_dump() == second_spec.model_dump()
 
 
+def test_rule_request_and_aggregation_request_select_different_rule_types() -> None:
+    """Rule and aggregation requests should not collapse onto the same template family."""
+    extractor = build_default_spec_extractor()
+    rule_spec = extractor.extract_spec(
+        "Read from Kafka topic sensor-events and publish BED_OUT events to inferred-events, key by user_id, within 20 minutes."
+    )
+    aggregation_spec = extractor.extract_spec(
+        "Count sensor-events by device_id every 10 minutes and write results to device-counts."
+    )
+
+    assert rule_spec.rule_type == ALLOWED_RULE_TYPE
+    assert aggregation_spec.rule_type == ALLOWED_AGGREGATION_TYPE
+
+
 @pytest.mark.parametrize(
     ("user_request", "message"),
     [
@@ -148,6 +187,10 @@ def test_stub_parser_returns_valid_spec_for_supported_variants(
         (
             "Build a Flink job that groups by user_id and emits BED_OUT within 20 minutes.",
             "source_topic",
+        ),
+        (
+            "Count sensor-events every 10 minutes and write results to device-counts.",
+            "key_by",
         ),
     ],
 )
