@@ -26,32 +26,117 @@ def test_load_prompt_reads_prompt_file() -> None:
     assert "two_events_within_window" in prompt
 
 
-def test_stub_parser_returns_valid_spec_for_supported_request() -> None:
-    """The stub parser should build a validated spec for the supported pattern."""
-    extractor = StubSpecExtractor()
-    spec = extractor.extract_spec(
+@pytest.mark.parametrize(
+    ("user_request", "expected"),
+    [
         (
-            "Build a Kafka job named fraud alerts with source topic payments, "
-            "sink topic alerts, key by account_id, event time field event_time, "
-            "and emit SuspiciousTransfer within 15 minutes."
-        )
-    )
+            (
+                "Build a Kafka job named fraud alerts with source topic payments, "
+                "sink topic alerts, key by account_id, event time field event_time, "
+                "and emit SuspiciousTransfer within 15 minutes."
+            ),
+            {
+                "job_name": "fraud-alerts",
+                "source_topic": "payments",
+                "sink_topic": "alerts",
+                "key_by": "account_id",
+                "event_time_field": "event_time",
+                "output_event_name": "SuspiciousTransfer",
+                "time_window_minutes": 15,
+            },
+        ),
+        (
+            "Read from Kafka topic sensor-events and publish BED_OUT events to inferred-events, key by user_id, within 20 minutes.",
+            {
+                "job_name": "bedout-job",
+                "source_topic": "sensor-events",
+                "sink_topic": "inferred-events",
+                "key_by": "user_id",
+                "event_time_field": "event_time",
+                "output_event_name": "BedOut",
+                "time_window_minutes": 20,
+            },
+        ),
+        (
+            "Consume sensor-events, key by user_id, emit BED_OUT within 20 minutes.",
+            {
+                "job_name": "bedout-job",
+                "source_topic": "sensor-events",
+                "sink_topic": "output-topic",
+                "key_by": "user_id",
+                "event_time_field": "event_time",
+                "output_event_name": "BedOut",
+                "time_window_minutes": 20,
+            },
+        ),
+        (
+            "Build a Flink job that reads sensor-events, groups by user_id, and writes BED_OUT to inferred-events within 20 minutes.",
+            {
+                "job_name": "bedout-job",
+                "source_topic": "sensor-events",
+                "sink_topic": "inferred-events",
+                "key_by": "user_id",
+                "event_time_field": "event_time",
+                "output_event_name": "BedOut",
+                "time_window_minutes": 20,
+            },
+        ),
+        (
+            "Read telemetry-events, keyed by device_id, use observed_at as event time, and emit TEMP_SPIKE to device-alerts within a 10 minute window.",
+            {
+                "job_name": "tempspike-job",
+                "source_topic": "telemetry-events",
+                "sink_topic": "device-alerts",
+                "key_by": "device_id",
+                "event_time_field": "observed_at",
+                "output_event_name": "TempSpike",
+                "time_window_minutes": 10,
+            },
+        ),
+    ],
+)
+def test_stub_parser_returns_valid_spec_for_supported_variants(
+    user_request: str,
+    expected: dict[str, str | int],
+) -> None:
+    """The stub parser should build deterministic specs for supported variants."""
+    extractor = StubSpecExtractor()
+    first_spec = extractor.extract_spec(user_request)
+    second_spec = extractor.extract_spec(user_request)
 
-    assert spec.job_name == "fraud-alerts"
-    assert spec.source_topic == "payments"
-    assert spec.sink_topic == "alerts"
-    assert spec.key_by == "account_id"
-    assert spec.event_time_field == "event_time"
-    assert spec.output_event_name == "SuspiciousTransfer"
-    assert spec.time_window_minutes == 15
+    assert first_spec.model_dump()["job_name"] == expected["job_name"]
+    assert first_spec.model_dump()["source_topic"] == expected["source_topic"]
+    assert first_spec.model_dump()["sink_topic"] == expected["sink_topic"]
+    assert first_spec.model_dump()["key_by"] == expected["key_by"]
+    assert first_spec.model_dump()["event_time_field"] == expected["event_time_field"]
+    assert first_spec.model_dump()["output_event_name"] == expected["output_event_name"]
+    assert first_spec.model_dump()["time_window_minutes"] == expected["time_window_minutes"]
+    assert first_spec.model_dump() == second_spec.model_dump()
 
 
-def test_stub_parser_rejects_unsupported_request() -> None:
-    """Requests outside the restricted pattern should fail clearly."""
+@pytest.mark.parametrize(
+    ("user_request", "message"),
+    [
+        (
+            "Read from Kafka topic sensor-events and publish BED_OUT events to inferred-events within 20 minutes.",
+            "key_by",
+        ),
+        (
+            "Consume sensor-events, key by user_id, and publish to inferred-events within 20 minutes.",
+            "output_event_name",
+        ),
+        (
+            "Build a Flink job that groups by user_id and emits BED_OUT within 20 minutes.",
+            "source_topic",
+        ),
+    ],
+)
+def test_stub_parser_rejects_invalid_requests(user_request: str, message: str) -> None:
+    """Requests missing essential fields should fail with clear parsing errors."""
     extractor = StubSpecExtractor()
 
-    with pytest.raises(SpecParsingError, match="Supported requests must mention"):
-        extractor.extract_spec("Create a streaming job that sends alerts quickly.")
+    with pytest.raises(SpecParsingError, match=message):
+        extractor.extract_spec(user_request)
 
 
 def test_extraction_service_coordinates_prompt_loading_and_parsing() -> None:
