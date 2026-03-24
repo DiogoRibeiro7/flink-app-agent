@@ -1,4 +1,4 @@
-"""Tests for the v0.1 Flink job specification model."""
+"""Tests for the v0.2 Flink job specification model."""
 
 from __future__ import annotations
 
@@ -32,6 +32,8 @@ def test_valid_spec_creation() -> None:
     assert spec.source_topic == "payments"
     assert spec.sink_topic == "alerts"
     assert spec.rule_type == ALLOWED_RULE_TYPE
+    assert spec.input_event_name == "InputEvent"
+    assert spec.output_event_name == "AlertEvent"
 
 
 def test_invalid_empty_topic() -> None:
@@ -40,6 +42,12 @@ def test_invalid_empty_topic() -> None:
     payload["source_topic"] = "   "
 
     with pytest.raises(ValidationError, match="source_topic must not be empty"):
+        FlinkJobSpec.model_validate(payload)
+
+    payload = FlinkJobSpec.demo().model_dump()
+    payload["sink_topic"] = "  "
+
+    with pytest.raises(ValidationError, match="sink_topic must not be empty"):
         FlinkJobSpec.model_validate(payload)
 
 
@@ -53,11 +61,11 @@ def test_invalid_time_window() -> None:
 
 
 def test_invalid_rule_type() -> None:
-    """Only the single v0.1 rule type should validate."""
+    """Only the single v0.2 rule type should validate."""
     payload = FlinkJobSpec.demo().model_dump()
     payload["rule_type"] = "count_by_key_window"
 
-    with pytest.raises(ValidationError, match="rule_type must be 'two_events_within_window'"):
+    with pytest.raises(ValidationError, match="rule_type must be 'two_events_within_window' for v0.2"):
         FlinkJobSpec.model_validate(payload)
 
 
@@ -69,6 +77,65 @@ def test_job_name_is_normalized() -> None:
     spec = FlinkJobSpec.model_validate(payload)
 
     assert spec.job_name == "sensor-occupancy-alerts"
+
+
+def test_identifier_fields_are_normalized() -> None:
+    """Identifier-like fields should normalize to safe underscore-based names."""
+    payload = FlinkJobSpec.demo().model_dump()
+    payload["key_by"] = " user id "
+    payload["event_time_field"] = " event-time "
+
+    spec = FlinkJobSpec.model_validate(payload)
+
+    assert spec.key_by == "user_id"
+    assert spec.event_time_field == "event_time"
+
+
+def test_invalid_identifier_fields_are_rejected() -> None:
+    """Identifier-like fields should fail if they still start with a number."""
+    payload = FlinkJobSpec.demo().model_dump()
+    payload["key_by"] = "123-user"
+
+    with pytest.raises(ValidationError, match="key_by must be a valid identifier"):
+        FlinkJobSpec.model_validate(payload)
+
+    payload = FlinkJobSpec.demo().model_dump()
+    payload["event_time_field"] = "9event-time"
+
+    with pytest.raises(ValidationError, match="event_time_field must be a valid identifier"):
+        FlinkJobSpec.model_validate(payload)
+
+
+def test_class_name_fields_are_normalized() -> None:
+    """Class-name fields should normalize to PascalCase names."""
+    payload = FlinkJobSpec.demo().model_dump()
+    payload["input_event_name"] = " input event "
+    payload["output_event_name"] = " alert event "
+
+    spec = FlinkJobSpec.model_validate(payload)
+
+    assert spec.input_event_name == "InputEvent"
+    assert spec.output_event_name == "AlertEvent"
+
+
+def test_whitespace_cleanup_is_applied_to_topics_and_rule_condition() -> None:
+    """Whitespace trimming should apply before validation on plain string fields."""
+    spec = FlinkJobSpec(
+        job_name="demo-job",
+        source_topic=" payments ",
+        sink_topic=" alerts ",
+        key_by="account_id",
+        event_time_field="event_time",
+        input_event_name="InputEvent",
+        output_event_name="AlertEvent",
+        rule_type=ALLOWED_RULE_TYPE,
+        rule_condition="  second payment occurs within 10 minutes  ",
+        time_window_minutes=10,
+    )
+
+    assert spec.source_topic == "payments"
+    assert spec.sink_topic == "alerts"
+    assert spec.rule_condition == "second payment occurs within 10 minutes"
 
 
 def test_template_dict_is_flat() -> None:

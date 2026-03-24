@@ -31,16 +31,22 @@ final class JobTemplate {
     public static void main(String[] args) throws Exception {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
+        KafkaSource<String> source = buildSource();
+        KafkaSink<String> sink = buildSink();
+
+        // 1. Read raw events from Kafka.
         DataStream<String> rawEvents = env.fromSource(
-                buildSource(),
+                source,
                 WatermarkStrategy.noWatermarks(),
                 "{{JOB_NAME}}-source");
 
+        // 2. Parse the raw payload into the generated input event model.
         DataStream<{{INPUT_EVENT_NAME}}> inputEvents =
                 rawEvents
                         .map({{INPUT_EVENT_NAME}}::fromRaw)
                         .assignTimestampsAndWatermarks(buildWatermarkStrategy());
 
+        // 3. Key the stream and apply the generated keyed rule logic.
         DataStream<{{OUTPUT_EVENT_NAME}}> outputEvents =
                 inputEvents
                         .keyBy(event -> event.getField("{{KEY_BY}}"))
@@ -50,9 +56,10 @@ final class JobTemplate {
                                 "{{EVENT_TIME_FIELD}}",
                                 {{TIME_WINDOW_MINUTES}}L));
 
+        // 4. Serialize the generated output event and write it back to Kafka.
         outputEvents
                 .map({{OUTPUT_EVENT_NAME}}::toJson)
-                .sinkTo(buildSink());
+                .sinkTo(sink);
 
         env.execute("{{JOB_NAME}}");
     }
@@ -79,6 +86,7 @@ final class JobTemplate {
     }
 
     private static WatermarkStrategy<{{INPUT_EVENT_NAME}}> buildWatermarkStrategy() {
+        // Watermarks are intentionally simple in v0.2. The field name is injected by the generator.
         return WatermarkStrategy
                 .<{{INPUT_EVENT_NAME}}>forBoundedOutOfOrderness(ALLOWED_LATENESS)
                 .withTimestampAssigner(new EventTimeAssigner());

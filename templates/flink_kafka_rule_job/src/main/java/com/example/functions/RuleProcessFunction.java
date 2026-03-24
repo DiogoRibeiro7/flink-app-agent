@@ -38,6 +38,7 @@ public class RuleProcessFunction
 
     @Override
     public void open(Configuration parameters) {
+        // Keyed state belongs here: one slot per stream key for the last candidate event time.
         firstSeenEventTime = getRuntimeContext().getState(
                 new ValueStateDescriptor<>("first-seen-event-time", Long.class));
     }
@@ -53,13 +54,14 @@ public class RuleProcessFunction
         Long firstSeen = firstSeenEventTime.value();
 
         if (firstSeen == null) {
-            // First event for this key: store it and register cleanup.
+            // 1. No prior candidate for this key. Store event-time state and register cleanup.
             firstSeenEventTime.update(eventTime);
             ctx.timerService().registerEventTimeTimer(eventTime + windowMillis());
             return;
         }
 
         if (eventTime - firstSeen <= windowMillis()) {
+            // 2. A second matching event arrived inside the configured window. Emit output here.
             out.collect(new {{OUTPUT_EVENT_NAME}}(
                     ctx.getCurrentKey(),
                     ruleType,
@@ -67,7 +69,7 @@ public class RuleProcessFunction
                     eventTime));
         }
 
-        // Keep the latest event as the active candidate for the next match.
+        // 3. Keep the latest event as the active candidate and move the cleanup timer forward.
         firstSeenEventTime.update(eventTime);
         ctx.timerService().registerEventTimeTimer(eventTime + windowMillis());
     }
@@ -79,7 +81,7 @@ public class RuleProcessFunction
             Collector<{{OUTPUT_EVENT_NAME}}> out) throws Exception {
         Long firstSeen = firstSeenEventTime.value();
         if (firstSeen != null && firstSeen + windowMillis() <= timestamp) {
-            // Timer cleanup avoids keeping stale per-key state forever.
+            // Event-time cleanup logic belongs here. Stale keyed state is cleared on timer firing.
             firstSeenEventTime.clear();
         }
     }

@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.generator import ProjectGenerator
+from flink_app_agent.generator import ProjectGenerator, TemplateRenderingError
 from flink_app_agent.spec import FlinkJobSpec
 
 
@@ -64,6 +64,32 @@ def test_generator_fails_clearly_when_template_path_is_missing(tmp_path: Path) -
 
     with pytest.raises(FileNotFoundError, match="Template directory not found"):
         generator.generate(spec=FlinkJobSpec.demo(), output_dir=tmp_path / "generated")
+
+
+def test_generator_fails_when_unresolved_placeholders_remain(tmp_path: Path) -> None:
+    """Unresolved placeholders in text files should fail generation clearly."""
+    template_dir = _create_template(tmp_path / "template")
+    (template_dir / "README.md").write_text(
+        "# {{JOB_NAME}}\nextra={{UNKNOWN_PLACEHOLDER}}\n",
+        encoding="utf-8",
+    )
+
+    generator = ProjectGenerator(template_dir=template_dir)
+
+    with pytest.raises(TemplateRenderingError, match="UNKNOWN_PLACEHOLDER"):
+        generator.generate(spec=FlinkJobSpec.demo(), output_dir=tmp_path / "generated")
+
+
+def test_generator_rejects_invalid_output_parent(tmp_path: Path) -> None:
+    """A file used as the parent output path should fail clearly."""
+    template_dir = _create_template(tmp_path / "template")
+    invalid_parent = tmp_path / "not-a-directory"
+    invalid_parent.write_text("content", encoding="utf-8")
+
+    generator = ProjectGenerator(template_dir=template_dir)
+
+    with pytest.raises(NotADirectoryError, match="Output parent is not a directory"):
+        generator.generate(spec=FlinkJobSpec.demo(), output_dir=invalid_parent / "generated")
 
 
 def _create_template(template_dir: Path) -> Path:

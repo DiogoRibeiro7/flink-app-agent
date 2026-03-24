@@ -13,6 +13,7 @@
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <flink.version>1.18.1</flink.version>
+        <kafka.connector.version>3.1.0-1.18</kafka.connector.version>
         <junit.version>5.10.2</junit.version>
     </properties>
 
@@ -30,7 +31,7 @@
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-kafka</artifactId>
-            <version>3.1.0-1.18</version>
+            <version>${kafka.connector.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>

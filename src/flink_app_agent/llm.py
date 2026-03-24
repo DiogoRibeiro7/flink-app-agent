@@ -47,40 +47,24 @@ def load_prompt(prompt_name: str) -> str:
 
 @dataclass(frozen=True)
 class StubSpecExtractor:
-    """Deterministic v0.1 extractor for a single narrow Flink request pattern."""
+    """Deterministic extractor for the narrow v0.2 request surface."""
 
     default_sink_topic: str = "inferred-events"
     default_event_time_field: str = "ts"
     default_input_event_name: str = "InputEvent"
 
     def extract_spec(self, request: str, prompt: str | None = None) -> FlinkJobSpec:
-        """Convert a supported v0.1 request into a validated ``FlinkJobSpec``."""
+        """Convert a supported request variant into a validated ``FlinkJobSpec``."""
         del prompt
 
         normalized_request = self._normalize_request(request)
 
         # TODO: Replace this regex-based parser with a real model-backed extractor.
         # TODO: Pass the contents of extract_spec.md to the future provider call.
-        source_topic = self._extract_required(
-            normalized_request,
-            r"read from kafka ([A-Za-z0-9._-]+)",
-            "Unable to parse source_topic. Supported v0.1 wording starts with 'Read from Kafka <topic>'.",
-        )
-        key_by = self._extract_required(
-            normalized_request,
-            r"key by ([A-Za-z0-9_.-]+)",
-            "Unable to parse key_by. Supported v0.1 wording includes 'key by <field>'.",
-        )
-        output_event_raw = self._extract_required(
-            normalized_request,
-            r"emit ([A-Za-z0-9 _-]+?) within",
-            "Unable to parse output_event_name. Supported v0.1 wording includes 'emit <EVENT> within <N> minutes'.",
-        )
-        time_window_raw = self._extract_required(
-            normalized_request,
-            r"within (\d+) minutes",
-            "Unable to parse time_window_minutes. Supported v0.1 wording includes 'within <N> minutes'.",
-        )
+        source_topic = self._extract_source_topic(normalized_request)
+        key_by = self._extract_key_by(normalized_request)
+        output_event_raw = self._extract_output_event_name(normalized_request)
+        time_window_raw = self._extract_time_window_minutes(normalized_request)
 
         output_event_name = to_pascal_case(output_event_raw)
         job_name = slugify(output_event_name) + "-job"
@@ -106,12 +90,84 @@ class StubSpecExtractor:
         """Normalize whitespace without changing the supported wording structure."""
         return re.sub(r"\s+", " ", request).strip()
 
-    def _extract_required(self, text: str, pattern: str, error_message: str) -> str:
-        """Extract one required value or raise a clear parsing error."""
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match is None:
-            raise SpecParsingError(error_message)
-        return match.group(1).strip()
+    def _extract_source_topic(self, request: str) -> str:
+        """Extract the Kafka source topic from supported wording variants."""
+        return self._extract_required(
+            request,
+            patterns=[
+                r"read from kafka ([A-Za-z0-9._-]+)",
+                r"consume ([A-Za-z0-9._-]+) from kafka",
+                r"build a flink job reading ([A-Za-z0-9._-]+)",
+                r"read topic ([A-Za-z0-9._-]+)",
+                r"reading ([A-Za-z0-9._-]+)",
+            ],
+            error_message=(
+                "Unable to parse source_topic. Supported variants include "
+                "'Read from Kafka <topic>', 'Consume <topic> from Kafka', or "
+                "'Build a Flink job reading <topic>'."
+            ),
+        )
+
+    def _extract_key_by(self, request: str) -> str:
+        """Extract the key field from supported wording variants."""
+        return self._extract_required(
+            request,
+            patterns=[
+                r"key by ([A-Za-z0-9_.-]+)",
+                r"keyed by ([A-Za-z0-9_.-]+)",
+                r"keying by ([A-Za-z0-9_.-]+)",
+                r"group by ([A-Za-z0-9_.-]+)",
+            ],
+            error_message=(
+                "Unable to parse key_by. Supported variants include "
+                "'key by <field>', 'keyed by <field>', 'keying by <field>', or "
+                "'group by <field>'."
+            ),
+        )
+
+    def _extract_output_event_name(self, request: str) -> str:
+        """Extract the output event name from supported wording variants."""
+        return self._extract_required(
+            request,
+            patterns=[
+                r"emit ([A-Za-z0-9 _-]+?) events? within",
+                r"emit ([A-Za-z0-9 _-]+?) within",
+                r"emit ([A-Za-z0-9 _-]+?)(?: events?)?$",
+                r"writing ([A-Za-z0-9 _-]+?)(?: within|$)",
+                r"write ([A-Za-z0-9 _-]+?)(?: within|$)",
+            ],
+            error_message=(
+                "Unable to parse output_event_name. Supported variants include "
+                "'emit <EVENT> within <N> minutes' or 'writing <EVENT> within <N> minutes'."
+            ),
+        )
+
+    def _extract_time_window_minutes(self, request: str) -> str:
+        """Extract the time window from supported minute-based wording variants."""
+        return self._extract_required(
+            request,
+            patterns=[
+                r"within (\d+) minutes",
+                r"within (\d+) minute",
+            ],
+            error_message=(
+                "Unable to parse time_window_minutes. Supported variants include "
+                "'within <N> minutes'."
+            ),
+        )
+
+    def _extract_required(
+        self,
+        text: str,
+        patterns: list[str],
+        error_message: str,
+    ) -> str:
+        """Extract the first matching value from the supplied pattern list."""
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match is not None:
+                return match.group(1).strip()
+        raise SpecParsingError(error_message)
 
 
 @dataclass(frozen=True)

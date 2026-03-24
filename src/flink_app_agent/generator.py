@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 
 from .spec import FlinkJobSpec
 from .utils import to_pascal_case
@@ -21,6 +22,11 @@ SAFE_TEXT_EXTENSIONS: frozenset[str] = frozenset(
         ".yml",
     }
 )
+PLACEHOLDER_PATTERN = re.compile(r"\{\{[A-Z0-9_]+\}\}")
+
+
+class TemplateRenderingError(ValueError):
+    """Raised when rendered text files still contain unresolved placeholders."""
 
 
 @dataclass(frozen=True)
@@ -54,13 +60,25 @@ class TemplateRenderer:
         )
 
     def render_file(self, path: Path, placeholders: dict[str, str]) -> None:
-        """Render one text file using simple placeholder replacement."""
+        """Render one text file and reject unresolved placeholders."""
         text = path.read_text(encoding="utf-8")
+        rendered = self.render_text(text, placeholders)
+        if rendered != text:
+            path.write_text(rendered, encoding="utf-8")
+
+    def render_text(self, text: str, placeholders: dict[str, str]) -> str:
+        """Render text and fail if placeholders remain unresolved."""
         rendered = text
         for placeholder, value in placeholders.items():
             rendered = rendered.replace(placeholder, value)
-        if rendered != text:
-            path.write_text(rendered, encoding="utf-8")
+
+        unresolved = sorted(set(PLACEHOLDER_PATTERN.findall(rendered)))
+        if unresolved:
+            unresolved_text = ", ".join(unresolved)
+            raise TemplateRenderingError(
+                f"Unresolved placeholders remain after rendering: {unresolved_text}"
+            )
+        return rendered
 
 
 @dataclass(frozen=True)
@@ -74,10 +92,11 @@ class ProjectGenerator:
         """Copy the template, render placeholders, rename template classes, and list files."""
         self._validate_template_dir()
         self._validate_output_dir(output_dir)
-        self._copy_template(output_dir)
-        self.renderer.render_directory(output_dir, PlaceholderMapping(spec).as_dict())
-        self._rename_template_files(output_dir, spec)
-        return self._list_generated_files(output_dir)
+        project_dir = self._copy_template(output_dir)
+        placeholders = PlaceholderMapping(spec).as_dict()
+        self.renderer.render_directory(project_dir, placeholders)
+        self._rename_template_files(project_dir, spec)
+        return self._list_generated_files(project_dir)
 
     def _validate_template_dir(self) -> None:
         """Ensure the configured template directory exists and is a directory."""
@@ -93,10 +112,11 @@ class ProjectGenerator:
         if output_dir.parent.exists() and not output_dir.parent.is_dir():
             raise NotADirectoryError(f"Output parent is not a directory: {output_dir.parent}")
 
-    def _copy_template(self, output_dir: Path) -> None:
+    def _copy_template(self, output_dir: Path) -> Path:
         """Copy the template directory into the requested output directory."""
         output_dir.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(self.template_dir, output_dir)
+        return output_dir
 
     def _rename_template_files(self, output_dir: Path, spec: FlinkJobSpec) -> None:
         """Rename the common Java template files to the resolved class names."""

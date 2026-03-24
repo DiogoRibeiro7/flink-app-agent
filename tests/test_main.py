@@ -29,8 +29,13 @@ def test_main_generates_project_and_prints_summary(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "Parsed spec:" in captured.out
+    assert "Parsed spec summary:" in captured.out
+    assert "Chosen template: flink_kafka_rule_job" in captured.out
+    assert f"Generation target: {output_dir}" in captured.out
+    assert "Generated files count:" in captured.out
     assert "Generated files:" in captured.out
+    assert "Structural review summary:" in captured.out
+    assert "0 failed" in captured.out
     assert str(output_dir / "README.md") in captured.out
     assert output_dir.exists()
 
@@ -50,3 +55,4 @@ def test_main_returns_non_zero_on_invalid_request(capsys) -> None:
 
     assert exit_code == 1
     assert "Error:" in captured.err
+    assert "source_topic" in captured.err

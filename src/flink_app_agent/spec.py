@@ -9,11 +9,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 
 
 FILESYSTEM_SAFE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ALLOWED_RULE_TYPE = "two_events_within_window"
 
 
 class FlinkJobSpec(BaseModel):
-    """Validated internal specification for the single v0.1 Flink job family."""
+    """Validated internal specification for the narrow v0.2 Flink job flow."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     supported_rule_types: ClassVar[set[str]] = {ALLOWED_RULE_TYPE}
@@ -25,7 +26,7 @@ class FlinkJobSpec(BaseModel):
     event_time_field: str = Field(description="Event-time field name.")
     input_event_name: str = Field(description="Input event class name.")
     output_event_name: str = Field(description="Output event class name.")
-    rule_type: str = Field(description="Supported rule type for v0.1.")
+    rule_type: str = Field(description="Supported rule type for v0.2.")
     rule_condition: str = Field(description="Human-readable rule condition.")
     time_window_minutes: int = Field(gt=0, description="Positive time window length.")
 
@@ -45,10 +46,6 @@ class FlinkJobSpec(BaseModel):
     @field_validator(
         "source_topic",
         "sink_topic",
-        "key_by",
-        "event_time_field",
-        "input_event_name",
-        "output_event_name",
         "rule_condition",
     )
     @classmethod
@@ -58,13 +55,35 @@ class FlinkJobSpec(BaseModel):
             raise ValueError(f"{info.field_name} must not be empty.")
         return value
 
+    @field_validator("key_by", "event_time_field")
+    @classmethod
+    def validate_identifier_fields(cls, value: str, info: ValidationInfo) -> str:
+        """Normalize and validate identifier-like fields."""
+        normalized = cls.normalize_identifier(value)
+        if not normalized:
+            raise ValueError(f"{info.field_name} must not be empty.")
+        if not IDENTIFIER_PATTERN.fullmatch(normalized):
+            raise ValueError(
+                f"{info.field_name} must be a valid identifier using letters, numbers, and underscores, and it must not start with a number."
+            )
+        return normalized
+
+    @field_validator("input_event_name", "output_event_name")
+    @classmethod
+    def validate_class_name_fields(cls, value: str, info: ValidationInfo) -> str:
+        """Normalize and validate Java-style class name fields."""
+        normalized = cls.normalize_class_name(value)
+        if not normalized:
+            raise ValueError(f"{info.field_name} must not be empty.")
+        return normalized
+
     @field_validator("rule_type")
     @classmethod
     def validate_rule_type(cls, value: str) -> str:
-        """Allow only the single supported v0.1 rule type."""
+        """Allow only the single supported v0.2 rule type."""
         if value != ALLOWED_RULE_TYPE:
             raise ValueError(
-                f"rule_type must be '{ALLOWED_RULE_TYPE}' for v0.1."
+                f"rule_type must be '{ALLOWED_RULE_TYPE}' for v0.2."
             )
         return value
 
@@ -110,3 +129,16 @@ class FlinkJobSpec(BaseModel):
         normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip().lower())
         normalized = re.sub(r"-{2,}", "-", normalized)
         return normalized.strip("-.")
+
+    @staticmethod
+    def normalize_identifier(value: str) -> str:
+        """Normalize free text into a simple underscore-based identifier."""
+        normalized = re.sub(r"[^A-Za-z0-9_]+", "_", value.strip())
+        normalized = re.sub(r"_+", "_", normalized)
+        return normalized.strip("_")
+
+    @staticmethod
+    def normalize_class_name(value: str) -> str:
+        """Normalize free text into a Java-style PascalCase class name."""
+        parts = re.findall(r"[A-Za-z0-9]+", value.strip())
+        return "".join(part[:1].upper() + part[1:] for part in parts)
