@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from .generator import ProjectGenerator, select_template_for_spec
-from .llm import FilePromptRepository, SpecExtractionService, SpecParsingError, StubSpecExtractor
+from .llm import SpecExtractor, SpecParsingError, build_default_spec_extractor
 from .review import PostGenerationReviewer
 from .spec import FlinkJobSpec
 
@@ -60,11 +60,8 @@ def main(argv: list[str] | None = None) -> int:
 
 def parse_request(request: str) -> FlinkJobSpec:
     """Parse a natural-language request into a validated ``FlinkJobSpec``."""
-    extraction_service = SpecExtractionService(
-        extractor=StubSpecExtractor(),
-        prompt_repository=FilePromptRepository(),
-    )
-    return extraction_service.extract(request)
+    extractor: SpecExtractor = build_default_spec_extractor()
+    return extractor.extract_spec(request)
 
 
 def generate_project(spec: FlinkJobSpec, output_dir: Path) -> list[Path]:

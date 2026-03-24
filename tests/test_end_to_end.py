@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from flink_app_agent.generator import ProjectGenerator, select_template_for_spec
-from flink_app_agent.llm import FilePromptRepository, SpecExtractionService, StubSpecExtractor
+from flink_app_agent.llm import build_default_extraction_service
 
 
 def test_sensor_job_request_generates_expected_project(tmp_path: Path) -> None:
@@ -18,11 +18,7 @@ def test_sensor_job_request_generates_expected_project(tmp_path: Path) -> None:
         "sink topic occupancy-alerts, key by room_id, event time field event_ts, "
         "and emit BED_OUT within 20 minutes."
     )
-    extraction_service = SpecExtractionService(
-        extractor=StubSpecExtractor(),
-        prompt_repository=FilePromptRepository(),
-    )
-    spec = extraction_service.extract(request)
+    spec = build_default_extraction_service().extract(request)
 
     assert spec.model_dump() == {
         "job_name": "sensor-occupancy-alerts",

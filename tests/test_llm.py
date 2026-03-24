@@ -11,9 +11,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from flink_app_agent.llm import (
     FilePromptRepository,
+    OpenAISpecPayloadExtractor,
+    PydanticSpecValidator,
+    ServiceBackedSpecExtractor,
+    SimpleRequestPreprocessor,
     SpecExtractionService,
     SpecParsingError,
     StubSpecExtractor,
+    StubSpecPayloadExtractor,
+    build_default_extraction_service,
+    build_default_spec_extractor,
     load_prompt,
 )
 
@@ -24,6 +31,13 @@ def test_load_prompt_reads_prompt_file() -> None:
 
     assert "FlinkJobSpec" in prompt
     assert "two_events_within_window" in prompt
+
+
+def test_request_preprocessor_normalizes_whitespace() -> None:
+    """Request preprocessing should normalize repeated whitespace only."""
+    preprocessor = SimpleRequestPreprocessor()
+
+    assert preprocessor.preprocess(" Read   from Kafka   topic sensor-events ") == "Read from Kafka topic sensor-events"
 
 
 @pytest.mark.parametrize(
@@ -100,7 +114,13 @@ def test_stub_parser_returns_valid_spec_for_supported_variants(
     expected: dict[str, str | int],
 ) -> None:
     """The stub parser should build deterministic specs for supported variants."""
-    extractor = StubSpecExtractor()
+    service = SpecExtractionService(
+        preprocessor=SimpleRequestPreprocessor(),
+        payload_extractor=StubSpecPayloadExtractor(),
+        validator=PydanticSpecValidator(),
+        prompt_repository=FilePromptRepository(),
+    )
+    extractor = ServiceBackedSpecExtractor(extraction_service=service)
     first_spec = extractor.extract_spec(user_request)
     second_spec = extractor.extract_spec(user_request)
 
@@ -133,7 +153,7 @@ def test_stub_parser_returns_valid_spec_for_supported_variants(
 )
 def test_stub_parser_rejects_invalid_requests(user_request: str, message: str) -> None:
     """Requests missing essential fields should fail with clear parsing errors."""
-    extractor = StubSpecExtractor()
+    extractor = build_default_spec_extractor()
 
     with pytest.raises(SpecParsingError, match=message):
         extractor.extract_spec(user_request)
@@ -141,14 +161,25 @@ def test_stub_parser_rejects_invalid_requests(user_request: str, message: str) -
 
 def test_extraction_service_coordinates_prompt_loading_and_parsing() -> None:
     """The service should combine the prompt repository and extractor cleanly."""
-    service = SpecExtractionService(
-        extractor=StubSpecExtractor(),
-        prompt_repository=FilePromptRepository(),
-    )
-
-    spec = service.extract(
+    spec = build_default_extraction_service().extract(
         "Build a Kafka job with source topic payments, sink topic alerts, key by account_id, emit AlertRaised within 5 minutes."
     )
 
     assert spec.output_event_name == "AlertRaised"
     assert spec.time_window_minutes == 5
+
+
+def test_default_extractor_is_service_backed_stub() -> None:
+    """The current default extractor should remain the stub-backed implementation."""
+    extractor = build_default_spec_extractor()
+
+    assert isinstance(extractor, StubSpecExtractor)
+    assert isinstance(extractor.extraction_service.payload_extractor, StubSpecPayloadExtractor)
+
+
+def test_openai_adapter_is_placeholder_only() -> None:
+    """The future provider adapter should not make real calls yet."""
+    adapter = OpenAISpecPayloadExtractor()
+
+    with pytest.raises(NotImplementedError, match="not implemented yet"):
+        adapter.extract_payload("request", "prompt")
