@@ -25,6 +25,19 @@ SAFE_TEXT_EXTENSIONS: frozenset[str] = frozenset(
 
 
 @dataclass(frozen=True)
+class TemplateCatalog:
+    """Resolve local template directories by template identifier."""
+
+    templates_root: Path
+    default_template_id: str = "flink_kafka_rule_job"
+
+    def resolve(self, template_id: str | None = None) -> Path:
+        """Return the directory for the requested template identifier."""
+        resolved_template_id = template_id or self.default_template_id
+        return self.templates_root / resolved_template_id
+
+
+@dataclass(frozen=True)
 class ProjectGenerator:
     """Generate a Flink project by copying and filling a local template directory."""
 

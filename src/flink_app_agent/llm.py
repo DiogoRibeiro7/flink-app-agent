@@ -12,10 +12,18 @@ from .utils import slugify, to_pascal_case
 
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+EXTRACT_SPEC_PROMPT = "extract_spec.md"
 
 
 class SpecParsingError(ValueError):
     """Raised when a natural-language request cannot be parsed into a valid spec."""
+
+
+class PromptRepository(Protocol):
+    """Interface for loading named prompt files."""
+
+    def load(self, prompt_name: str) -> str:
+        """Return the text content for a named prompt."""
 
 
 class SpecExtractor(Protocol):
@@ -25,12 +33,37 @@ class SpecExtractor(Protocol):
         """Parse a user request into a validated ``FlinkJobSpec``."""
 
 
+@dataclass(frozen=True)
+class FilePromptRepository:
+    """Load prompt files from a local prompt directory."""
+
+    prompts_dir: Path = PROMPTS_DIR
+
+    def load(self, prompt_name: str) -> str:
+        """Load a prompt file from disk."""
+        prompt_path = self.prompts_dir / prompt_name
+        if not prompt_path.exists():
+            raise FileNotFoundError(f"Prompt file not found in prompts directory: {prompt_name}")
+        return prompt_path.read_text(encoding="utf-8")
+
+
 def load_prompt(prompt_name: str) -> str:
-    """Load a prompt file from the package prompt directory."""
-    prompt_path = PROMPTS_DIR / prompt_name
-    if not prompt_path.exists():
-        raise FileNotFoundError(f"Prompt file not found in prompts directory: {prompt_name}")
-    return prompt_path.read_text(encoding="utf-8")
+    """Load a prompt file using the default file-backed repository."""
+    return FilePromptRepository().load(prompt_name)
+
+
+@dataclass(frozen=True)
+class SpecExtractionService:
+    """Coordinate prompt loading and request-to-spec extraction."""
+
+    extractor: SpecExtractor
+    prompt_repository: PromptRepository
+    prompt_name: str = EXTRACT_SPEC_PROMPT
+
+    def extract(self, request: str) -> FlinkJobSpec:
+        """Load the extraction prompt and parse the request into a spec."""
+        prompt = self.prompt_repository.load(self.prompt_name)
+        return self.extractor.extract_spec(request=request, prompt=prompt)
 
 
 @dataclass(frozen=True)

@@ -7,8 +7,8 @@ import json
 import sys
 from pathlib import Path
 
-from .generator import ProjectGenerator
-from .llm import SpecParsingError, StubSpecExtractor, load_prompt
+from .generator import ProjectGenerator, TemplateCatalog
+from .llm import FilePromptRepository, SpecExtractionService, SpecParsingError, StubSpecExtractor
 from .spec import FlinkJobSpec
 
 
@@ -55,14 +55,17 @@ def main(argv: list[str] | None = None) -> int:
 
 def parse_request(request: str) -> FlinkJobSpec:
     """Parse a natural-language request into a validated ``FlinkJobSpec``."""
-    extract_prompt = load_prompt("extract_spec.md")
-    extractor = StubSpecExtractor()
-    return extractor.extract_spec(request=request, prompt=extract_prompt)
+    extraction_service = SpecExtractionService(
+        extractor=StubSpecExtractor(),
+        prompt_repository=FilePromptRepository(),
+    )
+    return extraction_service.extract(request)
 
 
 def generate_project(spec: FlinkJobSpec, output_dir: Path) -> list[Path]:
     """Generate the Flink project from the local template directory."""
-    template_dir = Path(__file__).resolve().parents[2] / "templates" / "flink_kafka_rule_job"
+    templates_root = Path(__file__).resolve().parents[2] / "templates"
+    template_dir = TemplateCatalog(templates_root=templates_root).resolve()
     generator = ProjectGenerator(template_dir=template_dir)
     return generator.generate(spec=spec, output_dir=output_dir)
 

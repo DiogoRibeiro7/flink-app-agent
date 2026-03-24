@@ -9,7 +9,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.llm import SpecParsingError, StubSpecExtractor, load_prompt
+from flink_app_agent.llm import (
+    FilePromptRepository,
+    SpecExtractionService,
+    SpecParsingError,
+    StubSpecExtractor,
+    load_prompt,
+)
 
 
 def test_load_prompt_reads_prompt_file() -> None:
@@ -46,3 +52,18 @@ def test_stub_parser_rejects_unsupported_request() -> None:
 
     with pytest.raises(SpecParsingError, match="Supported requests must mention"):
         extractor.extract_spec("Create a streaming job that sends alerts quickly.")
+
+
+def test_extraction_service_coordinates_prompt_loading_and_parsing() -> None:
+    """The service should combine the prompt repository and extractor cleanly."""
+    service = SpecExtractionService(
+        extractor=StubSpecExtractor(),
+        prompt_repository=FilePromptRepository(),
+    )
+
+    spec = service.extract(
+        "Build a Kafka job with source topic payments, sink topic alerts, key by account_id, emit AlertRaised within 5 minutes."
+    )
+
+    assert spec.output_event_name == "AlertRaised"
+    assert spec.time_window_minutes == 5

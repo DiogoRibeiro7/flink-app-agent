@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.generator import ProjectGenerator
+from flink_app_agent.generator import ProjectGenerator, TemplateCatalog
 from flink_app_agent.spec import FlinkJobSpec
 
 
@@ -66,6 +66,13 @@ def test_generator_rejects_output_path_with_file_parent(tmp_path: Path) -> None:
 
     with pytest.raises(NotADirectoryError, match="Output parent is not a directory"):
         generator.generate(FlinkJobSpec.demo(), invalid_parent / "generated")
+
+
+def test_template_catalog_resolves_default_template_path(tmp_path: Path) -> None:
+    """Template resolution should be isolated from project generation."""
+    catalog = TemplateCatalog(templates_root=tmp_path)
+
+    assert catalog.resolve() == tmp_path / "flink_kafka_rule_job"
 
 
 def _create_template(template_dir: Path) -> Path:
