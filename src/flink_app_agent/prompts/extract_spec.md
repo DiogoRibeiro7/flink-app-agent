@@ -1,8 +1,10 @@
 # Extract Flink Job Spec
 
-Convert a natural-language Flink job request into the internal `FlinkJobSpec`.
+Future model behavior for v0.1:
 
-Return only the following fields:
+Convert a plain-English Flink job request into a validated `FlinkJobSpec`.
+
+Return exactly these fields:
 
 - `job_name`
 - `source_topic`
@@ -15,12 +17,12 @@ Return only the following fields:
 - `rule_condition`
 - `time_window_minutes`
 
-Current scope rules:
+Current v0.1 scope:
 
-- Support Kafka-based jobs only
-- Support only `rule_type = "two_events_within_window"`
-- `job_name` must be filesystem-safe
-- Topics must not be empty
-- `time_window_minutes` must be positive
+- one Kafka source topic
+- one key field
+- one emitted output event
+- one time window in minutes
+- one supported rule type: `two_events_within_window`
 
-If the request is ambiguous, normalize it into the smallest valid spec that fits the first-version template.
+If information is missing, use the safe v0.1 defaults only where explicitly allowed by the application.

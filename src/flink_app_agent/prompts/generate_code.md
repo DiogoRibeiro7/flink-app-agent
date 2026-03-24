@@ -1,13 +1,15 @@
 # Generate Flink Code
 
+Future model behavior for v0.1:
+
 Generate a Flink project from a validated `FlinkJobSpec`.
 
 The generated project should:
 
-- read events from a Kafka source topic
-- assign keys with the configured `key_by` field
-- use the configured `event_time_field` for event-time logic
-- implement the `two_events_within_window` rule pattern
+- read from the configured Kafka source topic
+- key the stream by the configured `key_by` field
+- use `event_time_field` for event-time handling
+- apply the `two_events_within_window` rule shape
 - emit the configured output event to the Kafka sink topic
 
-Keep the output small, explicit, and consistent with the current single-template project structure.
+Keep the generated code small, explicit, and aligned with the single local template.
