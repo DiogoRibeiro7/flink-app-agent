@@ -9,7 +9,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.generator import ProjectGenerator, TemplateCatalog
+from flink_app_agent.generator import (
+    PlaceholderMapping,
+    ProjectGenerator,
+    TemplateCatalog,
+    TemplateRenderer,
+    TemplateRenderingError,
+)
 from flink_app_agent.spec import FlinkJobSpec
 
 
@@ -36,6 +42,38 @@ def test_generator_copies_template_replaces_text_and_renames_classes(tmp_path: P
     assert "PaymentEvent" in input_file_path.read_text(encoding="utf-8")
     assert "AlertEvent" in output_file_path.read_text(encoding="utf-8")
     assert binary_file_path.read_bytes() == b"\x00{{JOB_NAME}}\x01"
+
+
+def test_placeholder_mapping_uses_validated_spec_values() -> None:
+    """Placeholder mapping should be derived from the spec template dictionary."""
+    mapping = PlaceholderMapping(FlinkJobSpec.demo()).as_dict()
+
+    assert mapping["{{JOB_NAME}}"] == "fraud-alert-job"
+    assert mapping["{{SOURCE_TOPIC}}"] == "payments"
+    assert mapping["{{OUTPUT_EVENT_NAME}}"] == "AlertEvent"
+
+
+def test_renderer_detects_unresolved_placeholders(tmp_path: Path) -> None:
+    """Rendering should fail clearly if a text file still contains placeholders."""
+    renderer = TemplateRenderer()
+    template_file = tmp_path / "template.txt"
+    template_file.write_text("{{JOB_NAME}} {{MISSING_PLACEHOLDER}}", encoding="utf-8")
+
+    with pytest.raises(TemplateRenderingError, match="MISSING_PLACEHOLDER"):
+        renderer.render_file(template_file, {"{{JOB_NAME}}": "demo-job"})
+
+
+def test_generator_rejects_template_with_unresolved_placeholders(tmp_path: Path) -> None:
+    """Generation should fail if the copied template still contains unresolved placeholders."""
+    template_dir = _create_template(tmp_path / "template")
+    (template_dir / "README.md").write_text(
+        "# {{JOB_NAME}}\nextra={{UNKNOWN_PLACEHOLDER}}\n",
+        encoding="utf-8",
+    )
+    generator = ProjectGenerator(template_dir=template_dir)
+
+    with pytest.raises(TemplateRenderingError, match="UNKNOWN_PLACEHOLDER"):
+        generator.generate(FlinkJobSpec.demo(), tmp_path / "generated")
 
 
 def test_generator_rejects_missing_template_directory(tmp_path: Path) -> None:
