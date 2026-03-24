@@ -1,4 +1,4 @@
-"""Deterministic structural checks for generated Flink projects."""
+"""Deterministic review module for generated Flink projects."""
 
 from __future__ import annotations
 
@@ -9,37 +9,51 @@ from .generator import PLACEHOLDER_PATTERN, SAFE_TEXT_EXTENSIONS, build_main_cla
 from .spec import FlinkJobSpec
 
 
+REPORT_FILENAME = "generation_report.json"
+
+
 @dataclass
 class ReviewResult:
-    """Structured result for post-generation structural checks."""
+    """Structured result for deterministic post-generation review."""
 
     passed_checks: list[str] = field(default_factory=list)
     failed_checks: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    overall_status: str = "passed"
 
     @property
     def success(self) -> bool:
         """Return whether all structural checks passed."""
         return not self.failed_checks
 
+    def finalize(self) -> "ReviewResult":
+        """Update the overall status from the current result contents."""
+        if self.failed_checks:
+            self.overall_status = "failed"
+        elif self.warnings:
+            self.overall_status = "passed_with_warnings"
+        else:
+            self.overall_status = "passed"
+        return self
+
 
 @dataclass(frozen=True)
 class StructuralReviewer:
-    """Run a small deterministic structural review on generated output."""
+    """Run a small deterministic file-based review on generated output."""
 
     text_extensions: frozenset[str] = SAFE_TEXT_EXTENSIONS
 
     def review(self, output_dir: Path, spec: FlinkJobSpec) -> ReviewResult:
-        """Review the generated project for a few obvious structural issues."""
+        """Review the generated project for obvious structural issues."""
         result = ReviewResult()
 
         if not output_dir.exists():
             result.failed_checks.append(f"Output directory does not exist: {output_dir}")
-            return result
+            return result.finalize()
 
         if not output_dir.is_dir():
             result.failed_checks.append(f"Output path is not a directory: {output_dir}")
-            return result
+            return result.finalize()
 
         result.passed_checks.append("Output directory exists.")
 
@@ -59,16 +73,17 @@ class StructuralReviewer:
         else:
             result.passed_checks.append("No unresolved placeholders remain in generated text files.")
 
-        if not expected_paths["README"].exists():
-            result.warnings.append("Generated project is missing README context.")
+        self._check_expected_topics(expected_paths, spec, result)
+        self._check_optional_test_scaffold(output_dir, result)
 
-        return result
+        return result.finalize()
 
     def _expected_paths(self, output_dir: Path, spec: FlinkJobSpec) -> dict[str, Path]:
         """Return key file paths expected in generated output."""
         main_class_name = build_main_class_name(spec.job_name)
         return {
             "README": output_dir / "README.md",
+            "Generation report": output_dir / REPORT_FILENAME,
             "Main Flink job file": (
                 output_dir
                 / "src"
@@ -96,3 +111,38 @@ class StructuralReviewer:
             for path in output_dir.rglob("*")
             if path.is_file() and path.suffix in self.text_extensions
         )
+
+    def _check_expected_topics(
+        self,
+        expected_paths: dict[str, Path],
+        spec: FlinkJobSpec,
+        result: ReviewResult,
+    ) -> None:
+        """Check that configured topics appear in key generated files."""
+        readme_path = expected_paths["README"]
+        main_job_path = expected_paths["Main Flink job file"]
+
+        if readme_path.exists():
+            readme_text = readme_path.read_text(encoding="utf-8")
+            self._assert_contains(readme_text, spec.source_topic, "README contains source topic.", result)
+            self._assert_contains(readme_text, spec.sink_topic, "README contains sink topic.", result)
+
+        if main_job_path.exists():
+            job_text = main_job_path.read_text(encoding="utf-8")
+            self._assert_contains(job_text, spec.source_topic, "Main Flink job file contains source topic.", result)
+            self._assert_contains(job_text, spec.sink_topic, "Main Flink job file contains sink topic.", result)
+
+    def _check_optional_test_scaffold(self, output_dir: Path, result: ReviewResult) -> None:
+        """Record a warning if the generated test scaffold is missing."""
+        test_file = output_dir / "src" / "test" / "java" / "com" / "example" / "RuleProcessFunctionTest.java"
+        if test_file.exists():
+            result.passed_checks.append("Generated test scaffold exists.")
+        else:
+            result.warnings.append(f"Generated test scaffold is missing: {test_file}")
+
+    def _assert_contains(self, text: str, needle: str, label: str, result: ReviewResult) -> None:
+        """Record a pass or failure for expected generated content."""
+        if needle in text:
+            result.passed_checks.append(label)
+        else:
+            result.failed_checks.append(f"{label[:-1]} is missing expected value '{needle}'.")

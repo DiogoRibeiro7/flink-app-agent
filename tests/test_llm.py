@@ -9,7 +9,19 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.llm import SpecParsingError, StubSpecExtractor, load_prompt
+from flink_app_agent.llm import (
+    DeterministicSpecPayloadExtractor,
+    FilePromptRepository,
+    OpenAISpecPayloadExtractor,
+    PydanticSpecValidator,
+    ServiceBackedSpecExtractor,
+    SimpleRequestPreprocessor,
+    SpecExtractionService,
+    SpecParsingError,
+    StubSpecExtractor,
+    build_default_spec_extractor,
+    load_prompt,
+)
 
 
 def test_load_prompt_reads_extract_prompt() -> None:
@@ -18,6 +30,13 @@ def test_load_prompt_reads_extract_prompt() -> None:
 
     assert "FlinkJobSpec" in prompt
     assert "two_events_within_window" in prompt
+
+
+def test_request_preprocessor_normalizes_whitespace() -> None:
+    """Request preprocessing should normalize repeated whitespace only."""
+    preprocessor = SimpleRequestPreprocessor()
+
+    assert preprocessor.preprocess(" Read   from Kafka   sensor-events ") == "Read from Kafka sensor-events"
 
 
 @pytest.mark.parametrize(
@@ -137,3 +156,38 @@ def test_stub_extractor_rejects_invalid_requests(user_request: str, message: str
 
     with pytest.raises(SpecParsingError, match=message):
         extractor.extract_spec(user_request)
+
+
+def test_service_backed_extractor_preserves_current_behavior() -> None:
+    """The extraction service should preserve the current deterministic behavior."""
+    service = SpecExtractionService(
+        preprocessor=SimpleRequestPreprocessor(),
+        prompt_repository=FilePromptRepository(),
+        payload_extractor=DeterministicSpecPayloadExtractor(),
+        validator=PydanticSpecValidator(),
+    )
+    extractor = ServiceBackedSpecExtractor(extraction_service=service)
+
+    spec = extractor.extract_spec(
+        "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes"
+    )
+
+    assert spec.job_name == "bedout-job"
+    assert spec.source_topic == "sensor-events"
+    assert spec.output_event_name == "BedOut"
+
+
+def test_default_extractor_is_still_the_deterministic_stub() -> None:
+    """The default extractor should remain stub-backed after the refactor."""
+    extractor = build_default_spec_extractor()
+
+    assert isinstance(extractor, StubSpecExtractor)
+    assert isinstance(extractor.extraction_service.payload_extractor, DeterministicSpecPayloadExtractor)
+
+
+def test_model_backed_extractor_skeleton_is_not_active() -> None:
+    """The future provider-backed extractor skeleton should not make real calls yet."""
+    extractor = OpenAISpecPayloadExtractor()
+
+    with pytest.raises(NotImplementedError, match="not implemented yet"):
+        extractor.extract_payload("request", "prompt")

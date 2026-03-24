@@ -1,11 +1,11 @@
-"""Deterministic v0.1 extraction stub for Flink job specifications."""
+"""Extraction layer boundaries and deterministic implementations for v0.3."""
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .spec import ALLOWED_RULE_TYPE, FlinkJobSpec
 from .utils import slugify, to_pascal_case
@@ -16,11 +16,39 @@ EXTRACT_SPEC_PROMPT = "extract_spec.md"
 
 
 class SpecParsingError(ValueError):
-    """Raised when a request does not match the narrow supported v0.1 pattern."""
+    """Raised when a request does not match the supported deterministic patterns."""
+
+
+class PromptRepository(Protocol):
+    """Interface for loading named prompt text used by extraction."""
+
+    def load(self, prompt_name: str) -> str:
+        """Return the prompt text for the given prompt name."""
+
+
+class RequestPreprocessor(Protocol):
+    """Interface for normalizing raw user requests before extraction."""
+
+    def preprocess(self, request: str) -> str:
+        """Return the normalized request text."""
+
+
+class SpecPayloadExtractor(Protocol):
+    """Interface for converting prompt-guided text into a raw spec payload."""
+
+    def extract_payload(self, request: str, prompt: str) -> dict[str, Any]:
+        """Return a raw payload that can be validated into ``FlinkJobSpec``."""
+
+
+class SpecValidator(Protocol):
+    """Interface for validating raw payloads into the internal spec model."""
+
+    def validate(self, payload: dict[str, Any]) -> FlinkJobSpec:
+        """Return a validated ``FlinkJobSpec``."""
 
 
 class SpecExtractor(Protocol):
-    """Interface for converting a plain-English request into a validated spec."""
+    """Top-level interface for converting a request into a validated spec."""
 
     def extract_spec(self, request: str) -> FlinkJobSpec:
         """Parse a request into a validated ``FlinkJobSpec``."""
@@ -46,49 +74,78 @@ def load_prompt(prompt_name: str) -> str:
 
 
 @dataclass(frozen=True)
-class StubSpecExtractor:
+class SimpleRequestPreprocessor:
+    """Normalize requests without changing their semantic structure."""
+
+    def preprocess(self, request: str) -> str:
+        """Collapse repeated whitespace and trim the outer edges."""
+        return re.sub(r"\s+", " ", request).strip()
+
+
+@dataclass(frozen=True)
+class PydanticSpecValidator:
+    """Validate extracted payloads using the project Pydantic model."""
+
+    def validate(self, payload: dict[str, Any]) -> FlinkJobSpec:
+        """Convert a raw payload into a validated ``FlinkJobSpec``."""
+        return FlinkJobSpec.from_llm_payload(payload)
+
+
+@dataclass(frozen=True)
+class SpecExtractionService:
+    """Coordinate preprocessing, prompt loading, extraction, and validation."""
+
+    preprocessor: RequestPreprocessor
+    prompt_repository: PromptRepository
+    payload_extractor: SpecPayloadExtractor
+    validator: SpecValidator
+    prompt_name: str = EXTRACT_SPEC_PROMPT
+
+    def extract(self, request: str) -> FlinkJobSpec:
+        """Run the full extraction flow and return a validated spec."""
+        normalized_request = self.preprocessor.preprocess(request)
+        prompt = self.prompt_repository.load(self.prompt_name)
+        payload = self.payload_extractor.extract_payload(normalized_request, prompt)
+        return self.validator.validate(payload)
+
+
+@dataclass(frozen=True)
+class DeterministicSpecPayloadExtractor:
     """Deterministic extractor for the narrow v0.2 request surface."""
 
     default_sink_topic: str = "inferred-events"
     default_event_time_field: str = "ts"
     default_input_event_name: str = "InputEvent"
 
-    def extract_spec(self, request: str, prompt: str | None = None) -> FlinkJobSpec:
-        """Convert a supported request variant into a validated ``FlinkJobSpec``."""
+    def extract_payload(self, request: str, prompt: str) -> dict[str, Any]:
+        """Convert supported request variants into a raw structured payload."""
         del prompt
 
-        normalized_request = self._normalize_request(request)
-
-        # TODO: Replace this regex-based parser with a real model-backed extractor.
-        # TODO: Pass the contents of extract_spec.md to the future provider call.
-        source_topic = self._extract_source_topic(normalized_request)
-        key_by = self._extract_key_by(normalized_request)
-        output_event_raw = self._extract_output_event_name(normalized_request)
-        time_window_raw = self._extract_time_window_minutes(normalized_request)
+        # TODO: Replace this regex-based implementation with a real provider-backed call.
+        # TODO: Pass the contents of extract_spec.md into the future provider request.
+        source_topic = self._extract_source_topic(request)
+        key_by = self._extract_key_by(request)
+        output_event_raw = self._extract_output_event_name(request)
+        time_window_raw = self._extract_time_window_minutes(request)
 
         output_event_name = to_pascal_case(output_event_raw)
-        job_name = slugify(output_event_name) + "-job"
         time_window_minutes = int(time_window_raw)
-        rule_condition = (
-            f"emit {output_event_name} when two keyed events match within {time_window_minutes} minutes"
-        )
 
-        return FlinkJobSpec(
-            job_name=job_name,
-            source_topic=source_topic,
-            sink_topic=self.default_sink_topic,
-            key_by=key_by,
-            event_time_field=self.default_event_time_field,
-            input_event_name=self.default_input_event_name,
-            output_event_name=output_event_name,
-            rule_type=ALLOWED_RULE_TYPE,
-            rule_condition=rule_condition,
-            time_window_minutes=time_window_minutes,
-        )
-
-    def _normalize_request(self, request: str) -> str:
-        """Normalize whitespace without changing the supported wording structure."""
-        return re.sub(r"\s+", " ", request).strip()
+        return {
+            "job_name": slugify(output_event_name) + "-job",
+            "source_topic": source_topic,
+            "sink_topic": self.default_sink_topic,
+            "key_by": key_by,
+            "event_time_field": self.default_event_time_field,
+            "input_event_name": self.default_input_event_name,
+            "output_event_name": output_event_name,
+            "rule_type": ALLOWED_RULE_TYPE,
+            "rule_condition": (
+                f"emit {output_event_name} when two keyed events match within "
+                f"{time_window_minutes} minutes"
+            ),
+            "time_window_minutes": time_window_minutes,
+        }
 
     def _extract_source_topic(self, request: str) -> str:
         """Extract the Kafka source topic from supported wording variants."""
@@ -171,19 +228,56 @@ class StubSpecExtractor:
 
 
 @dataclass(frozen=True)
-class OpenAISpecExtractor:
-    """Placeholder adapter for a future provider-backed extractor."""
+class OpenAISpecPayloadExtractor:
+    """Placeholder skeleton for a future model-backed payload extractor."""
 
     model_name: str = "gpt-placeholder"
 
-    def extract_spec(self, request: str) -> FlinkJobSpec:
-        """Raise until a real external provider integration is added."""
+    def extract_payload(self, request: str, prompt: str) -> dict[str, Any]:
+        """Raise until a real provider-backed implementation is added."""
         del request
+        del prompt
         raise NotImplementedError(
-            "Real LLM extraction is not implemented yet. Replace this stub with a provider-backed extractor later."
+            "Real model-backed extraction is not implemented yet. Replace this skeleton with a provider call later."
         )
 
 
+@dataclass(frozen=True)
+class ServiceBackedSpecExtractor:
+    """Expose the top-level extraction interface over the extraction service."""
+
+    extraction_service: SpecExtractionService
+
+    def extract_spec(self, request: str) -> FlinkJobSpec:
+        """Parse a request through the configured extraction service."""
+        return self.extraction_service.extract(request)
+
+
+@dataclass(frozen=True)
+class StubSpecExtractor:
+    """Backward-compatible deterministic extractor used as the default implementation."""
+
+    extraction_service: SpecExtractionService = field(init=False)
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "extraction_service", build_default_extraction_service())
+
+    def extract_spec(self, request: str, prompt: str | None = None) -> FlinkJobSpec:
+        """Parse a request using the default deterministic extraction pipeline."""
+        del prompt
+        return self.extraction_service.extract(request)
+
+
+def build_default_extraction_service() -> SpecExtractionService:
+    """Build the default deterministic extraction service pipeline."""
+    return SpecExtractionService(
+        preprocessor=SimpleRequestPreprocessor(),
+        prompt_repository=FilePromptRepository(),
+        payload_extractor=DeterministicSpecPayloadExtractor(),
+        validator=PydanticSpecValidator(),
+    )
+
+
 def build_default_spec_extractor() -> SpecExtractor:
-    """Return the default deterministic v0.1 extractor."""
+    """Return the default deterministic extractor used by the current CLI."""
     return StubSpecExtractor()

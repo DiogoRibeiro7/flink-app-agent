@@ -1,0 +1,29 @@
+{
+  "valid_requests": [
+    {
+      "name": "sensor_bedout_standard",
+      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+      "expected": {
+        "source_topic": "sensor-events",
+        "sink_topic": "inferred-events",
+        "output_event_name": "BedOut"
+      }
+    },
+    {
+      "name": "sensor_bedout_alternate_wording",
+      "request": "Consume sensor-events from Kafka, keyed by user_id, emit BED_OUT events within 20 minutes",
+      "expected": {
+        "source_topic": "sensor-events",
+        "sink_topic": "inferred-events",
+        "output_event_name": "BedOut"
+      }
+    }
+  ],
+  "invalid_requests": [
+    {
+      "name": "missing_source_topic",
+      "request": "Key by user_id, emit BED_OUT within 20 minutes",
+      "expected_error": "source_topic"
+    }
+  ]
+}

@@ -1,27 +1,19 @@
-"""Command-line entry point for the v0.1 flink-app-agent flow."""
+"""Command-line entry point for the local flink-app-agent flow."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
+from .generation_context import GenerationContext
 from .generator import ProjectGenerator
 from .llm import SpecParsingError, build_default_spec_extractor
+from .report import GenerationReport, write_generation_report
 from .review import ReviewResult, StructuralReviewer
 from .spec import FlinkJobSpec
-
-
-@dataclass(frozen=True)
-class GenerationSummary:
-    """Small stable summary for one generation run."""
-
-    template_name: str
-    output_dir: Path
-    generated_files: list[Path]
-    review_result: ReviewResult
+from .template_registry import TemplateDefinition, TemplateRegistry
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,32 +28,51 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output",
-        required=True,
         help="Directory where the generated project should be written.",
+    )
+    parser.add_argument(
+        "--print-spec-only",
+        action="store_true",
+        help="Parse and validate the request, print the spec summary, and exit.",
+    )
+    parser.add_argument(
+        "--print-template-info",
+        action="store_true",
+        help="Resolve the template for the request, print template metadata, and exit.",
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the v0.2 CLI flow and return a process exit code."""
+    """Run the CLI flow and return a process exit code."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
     try:
-        spec = parse_request(args.request)
-        template_dir = get_template_dir()
-        print_parsed_spec_summary(spec)
+        should_generate = not args.print_spec_only and not args.print_template_info
+        if should_generate and args.output is None:
+            raise ValueError(
+                "--output is required unless using --print-spec-only or --print-template-info."
+            )
 
-        generated_files = generate_project(spec, Path(args.output), template_dir)
-        review_result = review_project(spec, Path(args.output))
-        summary = GenerationSummary(
-            template_name=template_dir.name,
-            output_dir=Path(args.output),
-            generated_files=generated_files,
-            review_result=review_result,
-        )
-        print_generation_summary(summary)
-        if not summary.review_result.success:
+        output_dir = Path(args.output) if args.output is not None else Path(".")
+        context = build_generation_context(args.request, output_dir)
+
+        if should_print_spec(args):
+            print_parsed_spec_summary(context.spec)
+        if should_print_template_info(args):
+            print_template_summary(context.template)
+        if not should_generate:
+            return 0
+
+        context.generated_files = generate_project(context)
+        context.review_result = review_project(context)
+        context.report_path = write_report(context)
+        context.review_result = review_project(context)
+        context.report_path = write_report(context)
+
+        print_generation_summary(context)
+        if context.review_result is not None and not context.review_result.success:
             return 1
         return 0
     except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, ValueError) as exc:
@@ -78,22 +89,54 @@ def parse_request(request: str) -> FlinkJobSpec:
     return extractor.extract_spec(request)
 
 
-def get_template_dir() -> Path:
-    """Return the single local template directory used by the current CLI."""
-    return Path(__file__).resolve().parents[2] / "templates" / "flink_kafka_rule_job"
+def should_print_spec(args: argparse.Namespace) -> bool:
+    """Return whether the CLI should print the parsed spec summary."""
+    return True
 
 
-def generate_project(spec: FlinkJobSpec, output_dir: Path, template_dir: Path | None = None) -> list[Path]:
-    """Generate the project from the single local v0.2 template directory."""
-    resolved_template_dir = template_dir or get_template_dir()
-    generator = ProjectGenerator(template_dir=resolved_template_dir)
-    return generator.generate(spec=spec, output_dir=output_dir)
+def should_print_template_info(args: argparse.Namespace) -> bool:
+    """Return whether the CLI should print resolved template metadata."""
+    return args.print_template_info
 
 
-def review_project(spec: FlinkJobSpec, output_dir: Path) -> ReviewResult:
-    """Run the deterministic structural review for the generated project."""
+def build_generation_context(request_text: str, output_dir: Path) -> GenerationContext:
+    """Build the small shared context used across the generation pipeline."""
+    spec = parse_request(request_text)
+    template = resolve_template(spec)
+    return GenerationContext(
+        request_text=request_text,
+        output_dir=output_dir,
+        spec=spec,
+        template=template,
+    )
+
+
+def build_template_registry() -> TemplateRegistry:
+    """Build the local template registry used by the current CLI."""
+    templates_root = Path(__file__).resolve().parents[2] / "templates"
+    return TemplateRegistry.from_root(templates_root)
+
+def resolve_template(spec: FlinkJobSpec) -> TemplateDefinition:
+    """Resolve the registered template for a validated spec."""
+    return build_template_registry().resolve_for_spec(spec)
+
+
+def generate_project(context: GenerationContext) -> list[Path]:
+    """Generate the project from the template resolved in the shared context."""
+    generator = ProjectGenerator(template_dir=context.template.template_path)
+    return generator.generate(spec=context.spec, output_dir=context.output_dir)
+
+
+def review_project(context: GenerationContext) -> ReviewResult:
+    """Run the deterministic structural review for the current generation context."""
     reviewer = StructuralReviewer()
-    return reviewer.review(output_dir=output_dir, spec=spec)
+    return reviewer.review(output_dir=context.output_dir, spec=context.spec)
+
+
+def write_report(context: GenerationContext) -> Path:
+    """Write the machine-readable generation report for the current context."""
+    report = GenerationReport.from_context(context)
+    return write_generation_report(context.output_dir, report)
 
 
 def print_parsed_spec_summary(spec: FlinkJobSpec) -> None:
@@ -103,23 +146,44 @@ def print_parsed_spec_summary(spec: FlinkJobSpec) -> None:
     print()
 
 
-def print_generation_summary(summary: GenerationSummary) -> None:
+def print_template_summary(template: TemplateDefinition) -> None:
+    """Print a concise summary of the resolved generation template."""
+    print("Template info:")
+    print(f"- Identifier: {template.template_id}")
+    print(f"- Description: {template.description}")
+    print(f"- Runtime: {template.runtime}")
+    print(f"- Supported rule types: {', '.join(sorted(template.supported_rule_types))}")
+    print(f"- Path: {template.template_path}")
+    print()
+
+
+def print_generation_summary(context: GenerationContext) -> None:
     """Print a concise stable summary for the generation run."""
-    print(f"Chosen template: {summary.template_name}")
-    print(f"Generation target: {summary.output_dir}")
-    print(f"Generated files count: {len(summary.generated_files)}")
+    review_result = context.review_result
+    if review_result is None:
+        raise ValueError("Generation context does not contain a review result.")
+    if context.report_path is None:
+        raise ValueError("Generation context does not contain a report path.")
+
+    print(f"Chosen template: {context.template.template_id}")
+    print(f"Generation target: {context.output_dir}")
+    print(f"Generated files count: {len(context.generated_files)}")
+    print(f"Generation report: {context.report_path}")
     print("Generated files:")
-    for path in summary.generated_files:
+    for path in context.generated_files:
         print(f"- {path}")
     print(
         "Structural review summary: "
-        f"{len(summary.review_result.passed_checks)} passed, "
-        f"{len(summary.review_result.failed_checks)} failed, "
-        f"{len(summary.review_result.warnings)} warnings"
+        f"{review_result.overall_status}, "
+        f"{len(review_result.passed_checks)} passed, "
+        f"{len(review_result.failed_checks)} failed, "
+        f"{len(review_result.warnings)} warnings"
     )
-    for item in summary.review_result.failed_checks:
+    for item in review_result.passed_checks:
+        print(f"- PASS: {item}")
+    for item in review_result.failed_checks:
         print(f"- FAIL: {item}")
-    for item in summary.review_result.warnings:
+    for item in review_result.warnings:
         print(f"- WARN: {item}")
 
 
