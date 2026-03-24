@@ -1,65 +1,48 @@
 # flink-app-agent
 
-`flink-app-agent` is a small Python CLI that turns a plain-English Flink job request into:
+`flink-app-agent` is a small Python project that converts a narrow plain-English Flink job request into:
 
-1. a structured job specification
-2. a generated Flink project produced from a single built-in template
+1. a validated internal specification
+2. a generated Java Flink project copied from a local template
 
-The first version is intentionally narrow. It supports one template only: a Kafka-to-Kafka keyed rule job for Apache Flink.
+The repository is intentionally limited to a single first-version use case: a Kafka-to-Kafka keyed rule job implemented with the Flink DataStream API.
 
-## Current limitations
+## Purpose
 
-- No real LLM integration yet
-- No UI
-- No database
-- No Docker support
-- No multi-template selection
-- The natural-language extraction is a deterministic stub with simple heuristics
-- The generated Flink project is a starter scaffold, not a production-ready job
+The project exists to make the first step of Flink application scaffolding explicit and testable.
+It does not try to solve general code generation, template management, deployment, or runtime configuration.
 
-## What the CLI does
+The current implementation is built around three ideas:
 
-The CLI accepts a natural-language request and an output directory. It will:
+- parse a request into a strict `FlinkJobSpec`
+- keep generation local and deterministic
+- keep the template visible and editable in the repository
 
-1. load the extraction prompt
-2. ask the stub LLM interface for a structured payload
-3. validate that payload with Pydantic
-4. copy the Java template into the output directory
-5. replace placeholders in the copied template
-6. write the resolved spec as `job_spec.json`
+## Why The Scope Is Small
 
-## Example request
+The scope is deliberately constrained so the repository stays understandable while the basic workflow is still changing.
 
-```text
-Create a Flink job named fraud detector that reads from topic payments,
-writes to topic alerts, keys by account_id, uses consumer group fraud-group,
-and emits an alert when amount > 5000.
-```
+Current choices that keep the project small:
 
-## Example usage
+- one spec model
+- one deterministic parser instead of a real LLM call
+- one local template directory
+- one CLI entry point
+- no UI, database, Docker setup, or deployment logic
 
-```bash
-poetry install
-poetry run flink-app-agent \
-  --request "Create a Flink job named fraud detector that reads from topic payments, writes to topic alerts, keys by account_id, uses consumer group fraud-group, and emits an alert when amount > 5000." \
-  --output-dir ./generated/fraud-detector
-```
+## Current Architecture
 
-## Output
+The current flow is:
 
-The command creates:
+1. `main.py` reads a plain-English request and an output path from the CLI
+2. `llm.py` loads `extract_spec.md` and uses a deterministic stub parser
+3. `spec.py` validates the resulting `FlinkJobSpec` with Pydantic
+4. `generator.py` copies `templates/flink_kafka_rule_job/`
+5. `generator.py` replaces supported placeholders in text files and renames template class files
 
-- a generated Flink Maven project
-- a `job_spec.json` file with the structured spec used for generation
+The parser is not an actual LLM client yet. It only accepts a restricted request pattern and raises a clear parsing error for unsupported inputs.
 
-## Development
-
-```bash
-poetry install
-poetry run pytest
-```
-
-## Project structure
+## Repository Structure
 
 ```text
 flink-app-agent/
@@ -68,15 +51,148 @@ flink-app-agent/
 ├── src/
 │   └── flink_app_agent/
 │       ├── __init__.py
-│       ├── main.py
-│       ├── spec.py
 │       ├── generator.py
 │       ├── llm.py
-│       ├── prompts/
-│       │   ├── extract_spec.md
-│       │   └── generate_code.md
-│       └── utils.py
+│       ├── main.py
+│       ├── spec.py
+│       ├── utils.py
+│       └── prompts/
+│           ├── extract_spec.md
+│           └── generate_code.md
 ├── templates/
 │   └── flink_kafka_rule_job/
+│       ├── pom.xml
+│       ├── README.md
+│       └── src/
+│           ├── main/java/com/example/
+│           └── test/java/com/example/
 └── tests/
+    ├── test_generator.py
+    ├── test_llm.py
+    └── test_spec.py
 ```
+
+## Example Request
+
+```text
+Read from Kafka source topic sensor-events, sink topic alerts,
+key by user_id, emit BED_OUT within 20 minutes
+```
+
+## Example Generated Spec
+
+Given the request above, the current stub parser produces a spec equivalent to:
+
+```json
+{
+  "job_name": "bedout-job",
+  "source_topic": "sensor-events",
+  "sink_topic": "alerts",
+  "key_by": "user_id",
+  "event_time_field": "event_time",
+  "input_event_name": "InputEvent",
+  "output_event_name": "BedOut",
+  "rule_type": "two_events_within_window",
+  "rule_condition": "emit BedOut when two keyed events match within 20 minutes",
+  "time_window_minutes": 20
+}
+```
+
+## How Generation Works
+
+`generator.py` performs local filesystem operations only.
+
+It:
+
+- validates the template directory and output path
+- copies the selected template directory into the requested output directory
+- replaces placeholders in safe text files only
+- skips non-text files by extension
+- renames `JobTemplate.java`, `InputEvent.java`, and `OutputEvent.java`
+- returns the list of generated files
+
+Supported placeholders currently are:
+
+- `{{JOB_NAME}}`
+- `{{SOURCE_TOPIC}}`
+- `{{SINK_TOPIC}}`
+- `{{KEY_BY}}`
+- `{{EVENT_TIME_FIELD}}`
+- `{{INPUT_EVENT_NAME}}`
+- `{{OUTPUT_EVENT_NAME}}`
+- `{{RULE_TYPE}}`
+- `{{RULE_CONDITION}}`
+- `{{TIME_WINDOW_MINUTES}}`
+
+## Running The CLI
+
+Install dependencies:
+
+```bash
+poetry install
+```
+
+Run the CLI:
+
+```bash
+poetry run python -m flink_app_agent.main \
+  --request "Read from Kafka source topic sensor-events, sink topic alerts, key by user_id, emit BED_OUT within 20 minutes" \
+  --output ./out
+```
+
+The CLI prints:
+
+- the parsed spec before generation
+- the output directory
+- the list of generated files
+
+## Running Tests
+
+Run the full Python test suite:
+
+```bash
+poetry run pytest
+```
+
+Run a smaller subset:
+
+```bash
+poetry run pytest tests/test_spec.py tests/test_llm.py tests/test_generator.py
+```
+
+## Current Limitations
+
+The current implementation is intentionally incomplete.
+
+- No external LLM integration
+- The parser only supports a restricted request pattern
+- Only one template exists
+- Template selection is not implemented
+- The Java template is a scaffold, not a production-ready Flink application
+- Kafka parsing in the template is simplified
+- Package names and richer Java project customization are not supported
+- The CLI does not yet persist the parsed spec separately
+- No end-to-end Java build verification is executed from Python
+
+## Development Roadmap
+
+Reasonable next steps for this repository are:
+
+1. Replace the deterministic parser in `llm.py` with a real LLM-backed extraction step
+2. Align template generation and template internals more tightly around generated class names
+3. Add explicit spec-to-template compatibility checks
+4. Add CLI tests
+5. Add more templates only after the single-template path is stable
+6. Add optional Java build verification for generated output
+
+## Extending The Template System Later
+
+If template support grows beyond the current single-template setup, the smallest extension path is:
+
+1. add a `template_id` field back into the validated spec
+2. introduce a template registry that maps ids to local template directories
+3. define placeholder compatibility rules per template
+4. keep placeholder replacement separate from request parsing
+5. add template-level tests that verify generated file names and unresolved placeholders
+
+That keeps the current structure intact while allowing more than one project shape later.
