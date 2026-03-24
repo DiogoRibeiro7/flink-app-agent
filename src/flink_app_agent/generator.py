@@ -179,7 +179,7 @@ class ProjectGenerator:
         renames = {
             "InputEvent.java": f"{spec.input_event_name}.java",
             "OutputEvent.java": f"{spec.output_event_name}.java",
-            "JobTemplate.java": f"{self._main_class_name(spec)}.java",
+            "JobTemplate.java": f"{build_main_class_name(spec.job_name)}.java",
         }
 
         for path in sorted(root_dir.rglob("*"), key=lambda item: len(item.parts), reverse=True):
@@ -195,13 +195,6 @@ class ProjectGenerator:
                 raise FileExistsError(f"Cannot rename file because target already exists: {target_path}")
             path.rename(target_path)
 
-    def _main_class_name(self, spec: FlinkJobSpec) -> str:
-        """Build the generated main job class name from the job name."""
-        base_name = to_pascal_case(spec.job_name)
-        if base_name.endswith("Job"):
-            return base_name
-        return f"{base_name}Job"
-
     def _list_generated_files(self, output_dir: Path) -> list[Path]:
         """Return all generated files under the output directory."""
         return sorted(path for path in output_dir.rglob("*") if path.is_file())
@@ -211,3 +204,11 @@ def select_template_for_spec(spec: FlinkJobSpec, templates_root: Path) -> Templa
     """Select template metadata explicitly for a validated spec."""
     catalog = TemplateCatalog.from_root(templates_root)
     return catalog.select_for_spec(spec)
+
+
+def build_main_class_name(job_name: str) -> str:
+    """Build the generated main job class name from a normalized job name."""
+    base_name = to_pascal_case(job_name)
+    if base_name.endswith("Job"):
+        return base_name
+    return f"{base_name}Job"

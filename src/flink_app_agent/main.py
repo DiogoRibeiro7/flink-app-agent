@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .generator import ProjectGenerator, select_template_for_spec
 from .llm import FilePromptRepository, SpecExtractionService, SpecParsingError, StubSpecExtractor
+from .review import PostGenerationReviewer
 from .spec import FlinkJobSpec
 
 
@@ -42,7 +43,11 @@ def main(argv: list[str] | None = None) -> int:
         print_parsed_spec(spec)
 
         generated_files = generate_project(spec, Path(args.output))
-        print_success_summary(Path(args.output), generated_files)
+        review_result = review_project(spec, Path(args.output))
+        print_success_summary(Path(args.output), generated_files, review_result)
+        if not review_result.success:
+            print("Error: post-generation review failed.", file=sys.stderr)
+            return 1
     except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -70,6 +75,12 @@ def generate_project(spec: FlinkJobSpec, output_dir: Path) -> list[Path]:
     return generator.generate(spec=spec, output_dir=output_dir)
 
 
+def review_project(spec: FlinkJobSpec, output_dir: Path):
+    """Review the generated project for obvious structural issues."""
+    reviewer = PostGenerationReviewer()
+    return reviewer.review(output_dir=output_dir, spec=spec, repair=True)
+
+
 def print_parsed_spec(spec: FlinkJobSpec) -> None:
     """Print the parsed spec before generation starts."""
     print("Parsed spec:")
@@ -77,12 +88,21 @@ def print_parsed_spec(spec: FlinkJobSpec) -> None:
     print()
 
 
-def print_success_summary(output_dir: Path, generated_files: list[Path]) -> None:
+def print_success_summary(output_dir: Path, generated_files: list[Path], review_result) -> None:
     """Print a small success summary including generated files."""
     print(f"Generated project in: {output_dir}")
     print("Generated files:")
     for path in generated_files:
         print(f"- {path}")
+    print("Review summary:")
+    for item in review_result.passed_checks:
+        print(f"- PASS: {item}")
+    for item in review_result.warnings:
+        print(f"- WARN: {item}")
+    for item in review_result.repairs:
+        print(f"- REPAIR: {item}")
+    for item in review_result.failed_checks:
+        print(f"- FAIL: {item}")
 
 
 if __name__ == "__main__":
