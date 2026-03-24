@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -23,13 +23,6 @@ class SpecExtractor(Protocol):
     """Interface for converting a plain-English request into a validated spec."""
 
     def extract_spec(self, request: str) -> FlinkJobSpec:
-        """Parse a request into a validated ``FlinkJobSpec``."""
-
-
-class ExtractionService(Protocol):
-    """Interface for the small extraction service wrapper used by the CLI and tests."""
-
-    def extract(self, request: str) -> FlinkJobSpec:
         """Parse a request into a validated ``FlinkJobSpec``."""
 
 
@@ -122,17 +115,6 @@ class StubSpecExtractor:
 
 
 @dataclass(frozen=True)
-class DefaultExtractionService:
-    """Small service wrapper that keeps extraction wiring explicit."""
-
-    extractor: SpecExtractor
-
-    def extract(self, request: str) -> FlinkJobSpec:
-        """Parse a request through the configured extractor."""
-        return self.extractor.extract_spec(request)
-
-
-@dataclass(frozen=True)
 class OpenAISpecExtractor:
     """Placeholder adapter for a future provider-backed extractor."""
 
@@ -149,8 +131,3 @@ class OpenAISpecExtractor:
 def build_default_spec_extractor() -> SpecExtractor:
     """Return the default deterministic v0.1 extractor."""
     return StubSpecExtractor()
-
-
-def build_default_extraction_service() -> ExtractionService:
-    """Return the default extraction service used by the current application."""
-    return DefaultExtractionService(extractor=build_default_spec_extractor())

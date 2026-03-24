@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "flink-app-agent"
 version = "0.1.0"
-description = "A small agent that converts plain-English Flink requests into a structured spec and a generated project."
+description = "A small v0.1 CLI that turns narrow plain-English Flink requests into a validated spec and a generated project."
 authors = ["Diogo <diogo@example.com>"]
 license = "MIT"
 readme = "README.md"
