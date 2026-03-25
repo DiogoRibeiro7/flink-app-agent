@@ -18,13 +18,15 @@ Each template definition records:
 - short description
 - runtime
 
-The current registry contains one active real template:
+The current registry contains two active real templates:
 
 - `flink_kafka_rule_job`
+- `flink_windowed_aggregation_job`
 
-It supports:
+They support:
 
 - `two_events_within_window`
+- `count_by_key_window`
 
 ## Template Selection
 
@@ -72,4 +74,13 @@ The current template uses:
 - Flink job entrypoint
 - input and output models
 - `KeyedProcessFunction` scaffold
+- small Java test scaffold
+
+`templates/flink_windowed_aggregation_job/` is a minimal Java Flink starter with:
+
+- Maven build file
+- template README
+- Flink job entrypoint
+- input and output models
+- windowed count process function scaffold
 - small Java test scaffold

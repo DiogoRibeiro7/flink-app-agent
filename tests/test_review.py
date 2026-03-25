@@ -69,3 +69,18 @@ def test_structural_review_warns_when_test_scaffold_is_missing(tmp_path: Path) -
     assert result.success is True
     assert result.overall_status == "passed_with_warnings"
     assert any("Generated test scaffold is missing" in item for item in result.warnings)
+
+
+def test_structural_review_passes_for_windowed_aggregation_project(tmp_path: Path) -> None:
+    """The reviewer should recognize the aggregation template test scaffold."""
+    template_dir = Path(__file__).resolve().parents[1] / "templates" / "flink_windowed_aggregation_job"
+    spec = FlinkJobSpec.demo_windowed_aggregation()
+    output_dir = tmp_path / "generated-aggregation"
+
+    ProjectGenerator(template_dir=template_dir).generate(spec=spec, output_dir=output_dir)
+    (output_dir / GENERATION_REPORT_FILENAME).write_text("{}", encoding="utf-8")
+    result = StructuralReviewer().review(output_dir, spec)
+
+    assert result.success is True
+    assert "Generated test scaffold exists." in result.passed_checks
+    assert result.warnings == []

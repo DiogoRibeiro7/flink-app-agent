@@ -21,8 +21,9 @@ Current repository scope:
 
 - one Kafka source topic
 - one key field
-- one emitted output event
 - one time window in minutes
-- one supported rule type: `two_events_within_window`
+- one of two narrow job shapes:
+  - keyed rule event emission with `two_events_within_window`
+  - windowed count aggregation with `count_by_key_window`
 
 If information is missing, use only the safe defaults explicitly defined by the application.

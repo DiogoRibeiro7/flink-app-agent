@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.spec import ALLOWED_RULE_TYPE, FlinkJobSpec
+from flink_app_agent.spec import ALLOWED_RULE_TYPE, FlinkJobSpec, WINDOWED_AGGREGATION_RULE_TYPE
 
 
 def test_valid_spec_creation() -> None:
@@ -61,15 +61,26 @@ def test_invalid_time_window() -> None:
 
 
 def test_invalid_rule_type() -> None:
-    """Only the current supported rule type should validate."""
+    """Only the current supported rule types should validate."""
     payload = FlinkJobSpec.demo().model_dump()
-    payload["rule_type"] = "count_by_key_window"
+    payload["rule_type"] = "unsupported_rule_type"
 
     with pytest.raises(
         ValidationError,
-        match="rule_type must be 'two_events_within_window' for the current template path",
+        match="rule_type must be one of:",
     ):
         FlinkJobSpec.model_validate(payload)
+
+
+def test_windowed_aggregation_rule_type_is_supported() -> None:
+    """The second supported rule type should validate successfully."""
+    payload = FlinkJobSpec.demo().model_dump()
+    payload["rule_type"] = WINDOWED_AGGREGATION_RULE_TYPE
+    payload["rule_condition"] = "count events by account_id within 10 minutes"
+
+    spec = FlinkJobSpec.model_validate(payload)
+
+    assert spec.rule_type == WINDOWED_AGGREGATION_RULE_TYPE
 
 
 def test_job_name_is_normalized() -> None:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .constants import GENERATION_REPORT_FILENAME
 from .generator import PLACEHOLDER_PATTERN, SAFE_TEXT_EXTENSIONS, build_main_class_name
-from .spec import FlinkJobSpec
+from .spec import FlinkJobSpec, WINDOWED_AGGREGATION_RULE_TYPE
 
 
 REPORT_FILENAME = GENERATION_REPORT_FILENAME
@@ -75,7 +75,7 @@ class StructuralReviewer:
             result.passed_checks.append("No unresolved placeholders remain in generated text files.")
 
         self._check_expected_topics(expected_paths, spec, result)
-        self._check_optional_test_scaffold(output_dir, result)
+        self._check_optional_test_scaffold(output_dir, spec, result)
 
         return result.finalize()
 
@@ -133,9 +133,18 @@ class StructuralReviewer:
             self._assert_contains(job_text, spec.source_topic, "Main Flink job file contains source topic.", result)
             self._assert_contains(job_text, spec.sink_topic, "Main Flink job file contains sink topic.", result)
 
-    def _check_optional_test_scaffold(self, output_dir: Path, result: ReviewResult) -> None:
+    def _check_optional_test_scaffold(
+        self,
+        output_dir: Path,
+        spec: FlinkJobSpec,
+        result: ReviewResult,
+    ) -> None:
         """Record a warning if the generated test scaffold is missing."""
-        test_file = output_dir / "src" / "test" / "java" / "com" / "example" / "RuleProcessFunctionTest.java"
+        if spec.rule_type == WINDOWED_AGGREGATION_RULE_TYPE:
+            test_file_name = "WindowedCountProcessWindowFunctionTest.java"
+        else:
+            test_file_name = "RuleProcessFunctionTest.java"
+        test_file = output_dir / "src" / "test" / "java" / "com" / "example" / test_file_name
         if test_file.exists():
             result.passed_checks.append("Generated test scaffold exists.")
         else:

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from .spec import ALLOWED_RULE_TYPE, FlinkJobSpec
+from .spec import ALLOWED_RULE_TYPE, FlinkJobSpec, WINDOWED_AGGREGATION_RULE_TYPE
 from .utils import slugify, to_pascal_case
 
 
@@ -114,6 +114,7 @@ class DeterministicSpecPayloadExtractor:
     """Deterministic extractor for the current narrow request surface."""
 
     default_sink_topic: str = "inferred-events"
+    default_aggregation_sink_topic: str = "aggregated-events"
     default_event_time_field: str = "ts"
     default_input_event_name: str = "InputEvent"
 
@@ -125,12 +126,30 @@ class DeterministicSpecPayloadExtractor:
         # TODO: Pass the contents of extract_spec.md into the future provider request.
         source_topic = self._extract_source_topic(request)
         key_by = self._extract_key_by(request)
-        output_event_raw = self._extract_output_event_name(request)
-        time_window_raw = self._extract_time_window_minutes(request)
+        time_window_minutes = int(self._extract_time_window_minutes(request))
 
-        output_event_name = to_pascal_case(output_event_raw)
-        time_window_minutes = int(time_window_raw)
+        if self._is_windowed_aggregation_request(request):
+            return self._build_windowed_aggregation_payload(
+                source_topic=source_topic,
+                key_by=key_by,
+                time_window_minutes=time_window_minutes,
+            )
+        return self._build_keyed_rule_payload(
+            request=request,
+            source_topic=source_topic,
+            key_by=key_by,
+            time_window_minutes=time_window_minutes,
+        )
 
+    def _build_keyed_rule_payload(
+        self,
+        request: str,
+        source_topic: str,
+        key_by: str,
+        time_window_minutes: int,
+    ) -> dict[str, Any]:
+        """Build the payload for the keyed rule template family."""
+        output_event_name = to_pascal_case(self._extract_output_event_name(request))
         return {
             "job_name": slugify(output_event_name) + "-job",
             "source_topic": source_topic,
@@ -146,6 +165,36 @@ class DeterministicSpecPayloadExtractor:
             ),
             "time_window_minutes": time_window_minutes,
         }
+
+    def _build_windowed_aggregation_payload(
+        self,
+        source_topic: str,
+        key_by: str,
+        time_window_minutes: int,
+    ) -> dict[str, Any]:
+        """Build the payload for the windowed aggregation template family."""
+        output_event_name = to_pascal_case(f"{source_topic} count")
+        return {
+            "job_name": slugify(f"{source_topic} count") + "-job",
+            "source_topic": source_topic,
+            "sink_topic": self.default_aggregation_sink_topic,
+            "key_by": key_by,
+            "event_time_field": self.default_event_time_field,
+            "input_event_name": self.default_input_event_name,
+            "output_event_name": output_event_name,
+            "rule_type": WINDOWED_AGGREGATION_RULE_TYPE,
+            "rule_condition": (
+                f"count events by {key_by} within {time_window_minutes} minutes"
+            ),
+            "time_window_minutes": time_window_minutes,
+        }
+
+    def _is_windowed_aggregation_request(self, request: str) -> bool:
+        """Return whether the request matches the supported aggregation family."""
+        return bool(
+            re.search(r"\bcount(?: events?)?\b", request, flags=re.IGNORECASE)
+            or re.search(r"\baggregate count\b", request, flags=re.IGNORECASE)
+        )
 
     def _extract_source_topic(self, request: str) -> str:
         """Extract the Kafka source topic from supported wording variants."""
@@ -206,10 +255,12 @@ class DeterministicSpecPayloadExtractor:
             patterns=[
                 r"within (\d+) minutes",
                 r"within (\d+) minute",
+                r"every (\d+) minutes",
+                r"every (\d+) minute",
             ],
             error_message=(
                 "Unable to parse time_window_minutes. Supported variants include "
-                "'within <N> minutes'."
+                "'within <N> minutes' or 'every <N> minutes'."
             ),
         )
 

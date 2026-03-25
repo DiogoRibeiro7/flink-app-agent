@@ -117,6 +117,36 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
                 "time_window_minutes": 15,
             },
         ),
+        (
+            "Read from Kafka sensor-events, key by device_id, count events within 5 minutes",
+            {
+                "job_name": "sensor-events-count-job",
+                "source_topic": "sensor-events",
+                "sink_topic": "aggregated-events",
+                "key_by": "device_id",
+                "event_time_field": "ts",
+                "input_event_name": "InputEvent",
+                "output_event_name": "SensorEventsCount",
+                "rule_type": "count_by_key_window",
+                "rule_condition": "count events by device_id within 5 minutes",
+                "time_window_minutes": 5,
+            },
+        ),
+        (
+            "Build a Flink job reading sensor-events, group by device_id, aggregate count every 10 minutes",
+            {
+                "job_name": "sensor-events-count-job",
+                "source_topic": "sensor-events",
+                "sink_topic": "aggregated-events",
+                "key_by": "device_id",
+                "event_time_field": "ts",
+                "input_event_name": "InputEvent",
+                "output_event_name": "SensorEventsCount",
+                "rule_type": "count_by_key_window",
+                "rule_condition": "count events by device_id within 10 minutes",
+                "time_window_minutes": 10,
+            },
+        ),
     ],
 )
 def test_stub_extractor_parses_supported_request_variants(
@@ -148,6 +178,10 @@ def test_stub_extractor_parses_supported_request_variants(
             "Read from Kafka sensor-events, key by user_id, emit BED_OUT",
             "time_window_minutes",
         ),
+        (
+            "Read from Kafka sensor-events, count events within 5 minutes",
+            "key_by",
+        ),
     ],
 )
 def test_stub_extractor_rejects_invalid_requests(user_request: str, message: str) -> None:
@@ -175,6 +209,25 @@ def test_service_backed_extractor_preserves_current_behavior() -> None:
     assert spec.job_name == "bedout-job"
     assert spec.source_topic == "sensor-events"
     assert spec.output_event_name == "BedOut"
+
+
+def test_service_backed_extractor_supports_windowed_aggregation_family() -> None:
+    """The extraction service should support the aggregation family explicitly."""
+    service = SpecExtractionService(
+        preprocessor=SimpleRequestPreprocessor(),
+        prompt_repository=FilePromptRepository(),
+        payload_extractor=DeterministicSpecPayloadExtractor(),
+        validator=PydanticSpecValidator(),
+    )
+    extractor = ServiceBackedSpecExtractor(extraction_service=service)
+
+    spec = extractor.extract_spec(
+        "Read from Kafka sensor-events, group by device_id, count events within 5 minutes"
+    )
+
+    assert spec.rule_type == "count_by_key_window"
+    assert spec.sink_topic == "aggregated-events"
+    assert spec.output_event_name == "SensorEventsCount"
 
 
 def test_default_extractor_is_still_the_deterministic_stub() -> None:

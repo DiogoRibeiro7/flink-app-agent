@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from flink_app_agent.generation_context import GenerationContext
-from flink_app_agent.generator import ProjectGenerator
+from flink_app_agent.generator import ProjectGenerator, build_main_class_name
 from flink_app_agent.llm import build_default_spec_extractor
 from flink_app_agent.main import resolve_template, write_report
 from flink_app_agent.report import REPORT_FILENAME
@@ -73,3 +73,71 @@ def test_sensor_event_request_generates_coherent_project(tmp_path: Path) -> None
     assert "inferred-events" in job_text
     assert "BedOut" in readme_text
     assert "class BedOut" in output_event_text
+
+
+def test_windowed_aggregation_request_generates_coherent_project(tmp_path: Path) -> None:
+    """A windowed aggregation request should resolve the second template family."""
+    request = (
+        "Read from Kafka sensor-events, group by device_id, "
+        "count events within 5 minutes"
+    )
+
+    spec = build_default_spec_extractor().extract_spec(request)
+    template = resolve_template(spec)
+    output_dir = tmp_path / "sensor-count-job"
+    context = GenerationContext(
+        request_text=request,
+        output_dir=output_dir,
+        spec=spec,
+        template=template,
+    )
+
+    generated_files = ProjectGenerator(template_dir=template.template_path).generate(
+        spec=spec,
+        output_dir=output_dir,
+    )
+    context.generated_files = generated_files
+    context.review_result = StructuralReviewer().review(output_dir=output_dir, spec=spec)
+    context.report_path = write_report(context)
+    review_result = StructuralReviewer().review(output_dir=output_dir, spec=spec)
+
+    readme_path = output_dir / "README.md"
+    report_path = output_dir / REPORT_FILENAME
+    job_path = (
+        output_dir
+        / "src"
+        / "main"
+        / "java"
+        / "com"
+        / "example"
+        / f"{build_main_class_name(spec.job_name)}.java"
+    )
+    output_event_path = (
+        output_dir
+        / "src"
+        / "main"
+        / "java"
+        / "com"
+        / "example"
+        / "model"
+        / f"{spec.output_event_name}.java"
+    )
+
+    assert template.template_id == "flink_windowed_aggregation_job"
+    assert review_result.success is True
+    assert readme_path.exists()
+    assert report_path.exists()
+    assert job_path.exists()
+    assert output_event_path.exists()
+    assert job_path in generated_files
+
+    readme_text = readme_path.read_text(encoding="utf-8")
+    job_text = job_path.read_text(encoding="utf-8")
+
+    assert "{{JOB_NAME}}" not in readme_text
+    assert "{{SOURCE_TOPIC}}" not in job_text
+    assert "sensor-events" in readme_text
+    assert "aggregated-events" in readme_text
+    assert "SensorEventsCount" in readme_text
+    assert "sensor-events" in job_text
+    assert "aggregated-events" in job_text

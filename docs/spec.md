@@ -47,7 +47,9 @@ These are normalized into PascalCase class names.
 
 ### Rule fields
 
-- `rule_type` currently allows only `two_events_within_window`
+- `rule_type` currently allows:
+  - `two_events_within_window`
+  - `count_by_key_window`
 - `rule_condition` must be non-empty
 
 ### Window field

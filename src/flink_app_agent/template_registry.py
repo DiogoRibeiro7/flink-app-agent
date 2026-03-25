@@ -41,6 +41,13 @@ class TemplateRegistry:
                     description="Kafka-to-Kafka keyed rule job with event-time processing.",
                     runtime="Java / Apache Flink DataStream",
                 ),
+                TemplateDefinition(
+                    template_id="flink_windowed_aggregation_job",
+                    template_path=templates_root / "flink_windowed_aggregation_job",
+                    supported_rule_types=frozenset({"count_by_key_window"}),
+                    description="Kafka-to-Kafka windowed aggregation job with event-time processing.",
+                    runtime="Java / Apache Flink DataStream",
+                ),
             )
         )
 

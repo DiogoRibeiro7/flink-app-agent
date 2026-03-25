@@ -4,6 +4,7 @@
       "name": "sensor_bedout_standard",
       "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
       "expected": {
+        "template_id": "flink_kafka_rule_job",
         "source_topic": "sensor-events",
         "sink_topic": "inferred-events",
         "output_event_name": "BedOut"
@@ -13,9 +14,20 @@
       "name": "sensor_bedout_alternate_wording",
       "request": "Consume sensor-events from Kafka, keyed by user_id, emit BED_OUT events within 20 minutes",
       "expected": {
+        "template_id": "flink_kafka_rule_job",
         "source_topic": "sensor-events",
         "sink_topic": "inferred-events",
         "output_event_name": "BedOut"
+      }
+    },
+    {
+      "name": "sensor_count_windowed_aggregation",
+      "request": "Read from Kafka sensor-events, group by device_id, count events within 5 minutes",
+      "expected": {
+        "template_id": "flink_windowed_aggregation_job",
+        "source_topic": "sensor-events",
+        "sink_topic": "aggregated-events",
+        "output_event_name": "SensorEventsCount"
       }
     }
   ],

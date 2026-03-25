@@ -51,9 +51,10 @@ Generation is split across a few focused modules:
 - `generation_context.py`
   Carries the small amount of state shared across generation, review, and report writing.
 
-The current registry contains one active template definition:
+The current registry contains two active template definitions:
 
 - `flink_kafka_rule_job`
+- `flink_windowed_aggregation_job`
 
 ## Review And Reporting Boundary
 

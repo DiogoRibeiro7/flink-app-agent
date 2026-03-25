@@ -107,7 +107,7 @@ The following are still not near-term priorities:
 
 ## Compact Stage Summary
 
-- `v0.3`: stable narrow local pipeline with one real template, deterministic review, and generation reporting
+- `v0.3`: stable narrow local pipeline with two real templates, deterministic review, and generation reporting
 - `v0.4`: add one more real template, limited repair, stronger review, and better deterministic request handling
 - `v1.0`: stabilize a small set of templates, keep provider-backed extraction optional, and improve artifact-level guarantees
 - later: optional provider, verification, and packaging improvements if the constrained tool remains maintainable

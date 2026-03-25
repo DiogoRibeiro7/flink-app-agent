@@ -10,9 +10,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from flink_app_agent.generator import build_main_class_name
+from flink_app_agent.llm import SpecParsingError
 from flink_app_agent.main import build_generation_context, generate_project, review_project, write_report
 from flink_app_agent.report import REPORT_FILENAME
-from flink_app_agent.llm import SpecParsingError
 
 
 FIXTURES_PATH = Path(__file__).resolve().parent / "fixtures" / "end_to_end_requests.json"
@@ -46,13 +47,21 @@ def test_valid_request_fixtures_cover_full_local_generation_flow(
     context.report_path = write_report(context)
 
     readme_path = output_dir / "README.md"
-    job_path = output_dir / "src" / "main" / "java" / "com" / "example" / "BedoutJob.java"
+    job_path = (
+        output_dir
+        / "src"
+        / "main"
+        / "java"
+        / "com"
+        / "example"
+        / f"{build_main_class_name(context.spec.job_name)}.java"
+    )
     report_path = output_dir / REPORT_FILENAME
 
     assert context.spec.source_topic == expected["source_topic"]
     assert context.spec.sink_topic == expected["sink_topic"]
     assert context.spec.output_event_name == expected["output_event_name"]
-    assert context.template.template_id == "flink_kafka_rule_job"
+    assert context.template.template_id == expected["template_id"]
     assert context.review_result is not None
     assert context.review_result.success is True
     assert report_path.exists()

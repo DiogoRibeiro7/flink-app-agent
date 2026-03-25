@@ -11,13 +11,17 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 FILESYSTEM_SAFE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ALLOWED_RULE_TYPE = "two_events_within_window"
+WINDOWED_AGGREGATION_RULE_TYPE = "count_by_key_window"
 
 
 class FlinkJobSpec(BaseModel):
     """Validated internal specification for the current narrow Flink job flow."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    supported_rule_types: ClassVar[set[str]] = {ALLOWED_RULE_TYPE}
+    supported_rule_types: ClassVar[set[str]] = {
+        ALLOWED_RULE_TYPE,
+        WINDOWED_AGGREGATION_RULE_TYPE,
+    }
 
     job_name: str = Field(description="Filesystem-safe name for the generated job.")
     source_topic: str = Field(description="Kafka source topic name.")
@@ -80,10 +84,11 @@ class FlinkJobSpec(BaseModel):
     @field_validator("rule_type")
     @classmethod
     def validate_rule_type(cls, value: str) -> str:
-        """Allow only the single currently supported rule type."""
-        if value != ALLOWED_RULE_TYPE:
+        """Allow only the currently supported rule types."""
+        if value not in cls.supported_rule_types:
+            supported_rule_types = ", ".join(sorted(cls.supported_rule_types))
             raise ValueError(
-                f"rule_type must be '{ALLOWED_RULE_TYPE}' for the current template path."
+                f"rule_type must be one of: {supported_rule_types}."
             )
         return value
 
@@ -106,6 +111,22 @@ class FlinkJobSpec(BaseModel):
             rule_type=ALLOWED_RULE_TYPE,
             rule_condition="second payment occurs within 10 minutes",
             time_window_minutes=10,
+        )
+
+    @classmethod
+    def demo_windowed_aggregation(cls) -> "FlinkJobSpec":
+        """Return a small windowed aggregation demo spec for tests and examples."""
+        return cls(
+            job_name="sensor-events-count-job",
+            source_topic="sensor-events",
+            sink_topic="aggregated-events",
+            key_by="device_id",
+            event_time_field="ts",
+            input_event_name="InputEvent",
+            output_event_name="SensorEventsCount",
+            rule_type=WINDOWED_AGGREGATION_RULE_TYPE,
+            rule_condition="count events by device_id within 5 minutes",
+            time_window_minutes=5,
         )
 
     def to_template_dict(self) -> dict[str, str]:

@@ -3,7 +3,7 @@
 `flink-app-agent` is a small internal-style CLI that turns a narrow plain-English Flink job request into:
 
 1. a validated internal spec
-2. a generated Flink Java project from one local template
+2. a generated Flink Java project from a small local template set
 3. a deterministic structural review and JSON generation report
 
 The repository is intentionally small. It is meant to make one path from request text to generated project explicit and testable, not to cover broad Flink design space or open-ended code generation.
@@ -15,7 +15,7 @@ Current scope is deliberately narrow:
 - one CLI entry point
 - one strict spec model
 - one deterministic extractor
-- one registered real template
+- two registered real templates
 - one local generator
 - one deterministic review step
 - one JSON report artifact
@@ -70,7 +70,8 @@ flink-app-agent/
 │           ├── extract_spec.md
 │           └── generate_code.md
 ├── templates/
-│   └── flink_kafka_rule_job/
+│   ├── flink_kafka_rule_job/
+│   └── flink_windowed_aggregation_job/
 └── tests/
 ```
 
@@ -108,6 +109,12 @@ poetry run flink-app-agent \
 
 ```text
 Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes
+```
+
+Also supported in the current narrow scope:
+
+```text
+Read from Kafka sensor-events, group by device_id, count events within 5 minutes
 ```
 
 ## Example Output
@@ -179,8 +186,8 @@ Current limitations are explicit:
 - no web service or database
 - no Java compile or runtime verification
 - no Docker or deployment workflow
-- one real template only
-- one supported rule type only
+- only two narrow template families
+- only two supported rule types
 - request parsing is still deterministic and pattern-based
 - some fields are filled through fixed defaults rather than user-controlled extraction
 

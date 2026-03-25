@@ -43,6 +43,27 @@ def test_main_generates_project_and_prints_summary(
     assert output_dir.exists()
 
 
+def test_main_generates_windowed_aggregation_project(tmp_path: Path, capsys) -> None:
+    """The CLI should support the second registered template family."""
+    output_dir = tmp_path / "aggregation-generated"
+
+    exit_code = main(
+        [
+            "--request",
+            "Read from Kafka sensor-events, group by device_id, count events within 5 minutes",
+            "--output",
+            str(output_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Chosen template: flink_windowed_aggregation_job" in captured.out
+    assert f"Generation report: {output_dir / REPORT_FILENAME}" in captured.out
+    assert (output_dir / REPORT_FILENAME).exists()
+
+
 def test_main_print_spec_only_exits_before_generation(
     tmp_path: Path,
     capsys,

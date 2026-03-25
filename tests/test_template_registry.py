@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.spec import FlinkJobSpec
+from flink_app_agent.spec import FlinkJobSpec, WINDOWED_AGGREGATION_RULE_TYPE
 from flink_app_agent.template_registry import TemplateDefinition, TemplateRegistry, TemplateRegistryError
 
 
@@ -33,6 +33,18 @@ def test_template_registry_rejects_unknown_template_identifier(tmp_path: Path) -
         registry.get("missing-template")
 
 
+def test_template_registry_resolves_windowed_aggregation_template(tmp_path: Path) -> None:
+    """A windowed aggregation spec should resolve the aggregation template."""
+    registry = TemplateRegistry.from_root(tmp_path)
+
+    template = registry.resolve_for_spec(FlinkJobSpec.demo_windowed_aggregation())
+
+    assert template.template_id == "flink_windowed_aggregation_job"
+    assert template.template_path == tmp_path / "flink_windowed_aggregation_job"
+    assert template.description == "Kafka-to-Kafka windowed aggregation job with event-time processing."
+    assert template.runtime == "Java / Apache Flink DataStream"
+
+
 def test_template_registry_rejects_unsupported_rule_type(tmp_path: Path) -> None:
     """Specs with unsupported rule types should fail explicit resolution."""
     registry = TemplateRegistry(
@@ -42,6 +54,13 @@ def test_template_registry_rejects_unsupported_rule_type(tmp_path: Path) -> None
                 template_path=tmp_path / "flink_kafka_rule_job",
                 supported_rule_types=frozenset({"two_events_within_window"}),
                 description="Kafka-to-Kafka keyed rule job with event-time processing.",
+                runtime="Java / Apache Flink DataStream",
+            ),
+            TemplateDefinition(
+                template_id="flink_windowed_aggregation_job",
+                template_path=tmp_path / "flink_windowed_aggregation_job",
+                supported_rule_types=frozenset({WINDOWED_AGGREGATION_RULE_TYPE}),
+                description="Kafka-to-Kafka windowed aggregation job with event-time processing.",
                 runtime="Java / Apache Flink DataStream",
             ),
         )
