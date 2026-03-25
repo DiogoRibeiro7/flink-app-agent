@@ -127,16 +127,20 @@ def finalize_generated_project(context: GenerationContext) -> None:
     the generated project state, the report is written, and then the final
     review/report pair produces the stable end result consumed by the CLI.
     """
-    context.review_result = review_project(context)
+    context.review_result = review_project(context, attempt_repairs=True)
     context.report_path = write_report(context)
     context.review_result = review_project(context)
     context.report_path = write_report(context)
 
 
-def review_project(context: GenerationContext) -> ReviewResult:
+def review_project(context: GenerationContext, attempt_repairs: bool = False) -> ReviewResult:
     """Run the deterministic structural review for the current generation context."""
     reviewer = StructuralReviewer()
-    return reviewer.review(output_dir=context.output_dir, spec=context.spec)
+    return reviewer.review(
+        output_dir=context.output_dir,
+        spec=context.spec,
+        attempt_repairs=attempt_repairs,
+    )
 
 
 def write_report(context: GenerationContext) -> Path:
@@ -184,7 +188,8 @@ def print_generation_summary(context: GenerationContext) -> None:
         f"{review_result.overall_status}, "
         f"{len(review_result.passed_checks)} passed, "
         f"{len(review_result.failed_checks)} failed, "
-        f"{len(review_result.warnings)} warnings"
+        f"{len(review_result.warnings)} warnings, "
+        f"{len(review_result.repairs)} repairs"
     )
     for item in review_result.passed_checks:
         print(f"- PASS: {item}")
@@ -192,6 +197,8 @@ def print_generation_summary(context: GenerationContext) -> None:
         print(f"- FAIL: {item}")
     for item in review_result.warnings:
         print(f"- WARN: {item}")
+    for item in review_result.repairs:
+        print(f"- REPAIR: {item}")
 
 
 if __name__ == "__main__":

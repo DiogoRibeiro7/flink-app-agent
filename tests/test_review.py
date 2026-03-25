@@ -32,6 +32,7 @@ def test_structural_review_passes_for_generated_project(tmp_path: Path) -> None:
     assert "Main Flink job file exists." in result.passed_checks
     assert "README contains source topic." in result.passed_checks
     assert "Main Flink job file contains sink topic." in result.passed_checks
+    assert result.repairs == []
 
 
 def test_structural_review_fails_when_main_job_file_is_missing(tmp_path: Path) -> None:
@@ -69,6 +70,28 @@ def test_structural_review_warns_when_test_scaffold_is_missing(tmp_path: Path) -
     assert result.success is True
     assert result.overall_status == "passed_with_warnings"
     assert any("Generated test scaffold is missing" in item for item in result.warnings)
+
+
+def test_structural_review_repairs_trailing_placeholder_only_lines(tmp_path: Path) -> None:
+    """A trailing placeholder-only line should be removed when repairs are enabled."""
+    template_dir = Path(__file__).resolve().parents[1] / "templates" / "flink_kafka_rule_job"
+    spec = FlinkJobSpec.demo()
+    output_dir = tmp_path / "generated-repair"
+    readme_path = output_dir / "README.md"
+
+    ProjectGenerator(template_dir=template_dir).generate(spec=spec, output_dir=output_dir)
+    (output_dir / GENERATION_REPORT_FILENAME).write_text("{}", encoding="utf-8")
+    readme_path.write_text(
+        readme_path.read_text(encoding="utf-8") + "\n{{TRAILING_PLACEHOLDER}}\n",
+        encoding="utf-8",
+    )
+
+    result = StructuralReviewer().review(output_dir, spec, attempt_repairs=True)
+
+    assert result.success is True
+    assert result.repairs
+    assert any("Removed trailing placeholder-only lines" in item for item in result.repairs)
+    assert "{{TRAILING_PLACEHOLDER}}" not in readme_path.read_text(encoding="utf-8")
 
 
 def test_structural_review_passes_for_windowed_aggregation_project(tmp_path: Path) -> None:

@@ -25,7 +25,7 @@ The next likely version should improve confidence and coverage without changing 
 Primary themes:
 
 - second real template family
-- limited repair loop for safe obvious issues
+- richer repair coverage for safe obvious issues
 - richer deterministic review checks
 - better request interpretation within the current narrow scope
 - stricter output guarantees
@@ -35,7 +35,7 @@ Likely changes:
 - add one second template that is materially different from the current keyed rule job
 - refine template selection so mismatches fail earlier and more clearly
 - broaden deterministic extraction for a few more supported phrasings without moving to open-ended interpretation
-- add a small repair pass only for narrow and auditable cases, such as trivial generated-file inconsistencies
+- expand the existing small repair pass only for narrow and auditable cases, such as trivial generated-file inconsistencies
 - strengthen review checks around expected generated files and generated content
 - tighten report contents so successful generation leaves behind a more complete machine-readable summary
 

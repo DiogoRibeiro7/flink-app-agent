@@ -25,6 +25,7 @@ class StructuralCheckReport:
     passed_checks: list[str]
     failed_checks: list[str]
     warnings: list[str]
+    repairs: list[str]
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class GenerationReport:
                 passed_checks=list(review_result.passed_checks),
                 failed_checks=list(review_result.failed_checks),
                 warnings=list(review_result.warnings),
+                repairs=list(review_result.repairs),
             ),
             warnings=list(review_result.warnings),
         )

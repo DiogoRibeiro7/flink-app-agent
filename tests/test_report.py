@@ -58,3 +58,4 @@ def test_generation_report_file_is_created_with_key_fields(tmp_path: Path) -> No
     assert payload["generated_files_count"] == len(generated_files)
     assert any(path.endswith("README.md") for path in payload["generated_files"])
     assert payload["structural_check"]["success"] is True
+    assert payload["structural_check"]["repairs"] == []

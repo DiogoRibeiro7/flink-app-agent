@@ -11,8 +11,9 @@ The default CLI path in `src/flink_app_agent/main.py` performs:
 3. template resolution
 4. template rendering
 5. structural review
-6. generation report writing
-7. terminal summary output
+6. limited safe repair when applicable
+7. generation report writing
+8. terminal summary output
 
 The same entry point also supports two inspection-only modes:
 
@@ -60,7 +61,7 @@ The current registry contains two active template definitions:
 
 After generation:
 
-- `review.py` performs deterministic file-based checks
+- `review.py` performs deterministic file-based checks and a narrow repair pass for safe cases
 - `report.py` serializes the run into `generation_report.json`
 
 The review step is intentionally lightweight. It checks project structure and obvious rendering problems, but it does not compile Java or run Flink.

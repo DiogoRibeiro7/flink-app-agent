@@ -23,11 +23,14 @@ Current checks include:
 
 It may also record a warning if the generated Java test scaffold is missing.
 
+During the normal CLI flow, the repository also allows a very small repair step for safe cases only. Today that repair step removes trailing placeholder-only lines from generated text files when the intent is unambiguous.
+
 `ReviewResult` records:
 
 - `passed_checks`
 - `failed_checks`
 - `warnings`
+- `repairs`
 - `overall_status`
 
 ## Generation Report

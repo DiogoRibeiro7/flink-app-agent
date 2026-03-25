@@ -4,7 +4,7 @@
 
 1. a validated internal spec
 2. a generated Flink Java project from a small local template set
-3. a deterministic structural review and JSON generation report
+3. a deterministic structural review, a limited repair pass for safe cases, and a JSON generation report
 
 The repository is intentionally small. It is meant to make one path from request text to generated project explicit and testable, not to cover broad Flink design space or open-ended code generation.
 
@@ -17,7 +17,7 @@ Current scope is deliberately narrow:
 - one deterministic extractor
 - two registered real templates
 - one local generator
-- one deterministic review step
+- one deterministic review step with narrow repairs
 - one JSON report artifact
 
 The project does not try to infer many job families, manage infrastructure, or hide the generation process behind a larger service.
@@ -32,8 +32,9 @@ The current pipeline is:
 4. `template_registry.py` resolves the local template for the spec
 5. `generator.py` copies the template, renders placeholders in safe text files, and returns generated paths
 6. `review.py` runs lightweight file-based checks on the generated project
-7. `report.py` writes `generation_report.json`
-8. `main.py` prints a concise summary
+7. `review.py` may apply a small safe repair when the fix is unambiguous
+8. `report.py` writes `generation_report.json`
+9. `main.py` prints a concise summary
 
 Deeper implementation notes live in:
 
@@ -157,7 +158,7 @@ Chosen template: flink_kafka_rule_job
 Generation target: out
 Generated files count: 7
 Generation report: out\generation_report.json
-Structural review summary: passed, 8 passed, 0 failed, 0 warnings
+Structural review summary: passed, 8 passed, 0 failed, 0 warnings, 0 repairs
 ```
 
 Example generated project shape:
@@ -189,6 +190,7 @@ Current limitations are explicit:
 - only two narrow template families
 - only two supported rule types
 - request parsing is still deterministic and pattern-based
+- repairs are intentionally limited to safe text cleanup only
 - some fields are filled through fixed defaults rather than user-controlled extraction
 
 ## Roadmap
