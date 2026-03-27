@@ -5,6 +5,7 @@
       "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
       "expected": {
         "template_id": "flink_kafka_rule_job",
+        "job_family": "keyed_temporal_rule",
         "source_topic": "sensor-events",
         "sink_topic": "inferred-events",
         "output_event_name": "BedOut"
@@ -15,9 +16,32 @@
       "request": "Consume sensor-events from Kafka, keyed by user_id, emit BED_OUT events within 20 minutes",
       "expected": {
         "template_id": "flink_kafka_rule_job",
+        "job_family": "keyed_temporal_rule",
         "source_topic": "sensor-events",
         "sink_topic": "inferred-events",
         "output_event_name": "BedOut"
+      }
+    },
+    {
+      "name": "sensor_bedout_stream_partition",
+      "request": "Stream from Kafka sensor-events, partition by user_id, emit BED_OUT within 20 minutes",
+      "expected": {
+        "template_id": "flink_kafka_rule_job",
+        "job_family": "keyed_temporal_rule",
+        "source_topic": "sensor-events",
+        "sink_topic": "inferred-events",
+        "output_event_name": "BedOut"
+      }
+    },
+    {
+      "name": "device_temp_spike_keyed_rule",
+      "request": "Read from Kafka device-events, keyed by device_id, emit TEMP_SPIKE within 15 minutes",
+      "expected": {
+        "template_id": "flink_kafka_rule_job",
+        "job_family": "keyed_temporal_rule",
+        "source_topic": "device-events",
+        "sink_topic": "inferred-events",
+        "output_event_name": "TempSpike"
       }
     },
     {
@@ -25,9 +49,21 @@
       "request": "Read from Kafka sensor-events, group by device_id, count events within 5 minutes",
       "expected": {
         "template_id": "flink_windowed_aggregation_job",
+        "job_family": "windowed_aggregation",
         "source_topic": "sensor-events",
         "sink_topic": "aggregated-events",
         "output_event_name": "SensorEventsCount"
+      }
+    },
+    {
+      "name": "device_count_windowed_aggregation",
+      "request": "Listen to Kafka device-events, partition by device_id, count events within 15 minutes",
+      "expected": {
+        "template_id": "flink_windowed_aggregation_job",
+        "job_family": "windowed_aggregation",
+        "source_topic": "device-events",
+        "sink_topic": "aggregated-events",
+        "output_event_name": "DeviceEventsCount"
       }
     }
   ],
@@ -36,6 +72,11 @@
       "name": "missing_source_topic",
       "request": "Key by user_id, emit BED_OUT within 20 minutes",
       "expected_error": "source_topic"
+    },
+    {
+      "name": "missing_key_by_for_aggregation",
+      "request": "Read from Kafka sensor-events, count events within 5 minutes",
+      "expected_error": "key_by"
     }
   ]
 }

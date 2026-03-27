@@ -1,6 +1,6 @@
 # Architecture
 
-`flink-app-agent` is organized as a short local pipeline.
+`flink-app-agent` is organized as a short local pipeline with explicit multi-family support.
 
 ## Main Flow
 
@@ -46,7 +46,7 @@ The active implementation is deterministic:
 Generation is split across a few focused modules:
 
 - `template_registry.py`
-  Resolves template metadata for a validated spec.
+  Resolves template metadata for a validated spec by matching both `job_family` and `rule_type`.
 - `generator.py`
   Copies the selected template and renders placeholders in safe text files.
 - `generation_context.py`

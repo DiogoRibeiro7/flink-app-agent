@@ -9,7 +9,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.spec import FlinkJobSpec, WINDOWED_AGGREGATION_RULE_TYPE
+from flink_app_agent.spec import (
+    FlinkJobSpec,
+    JOB_FAMILY_KEYED_RULE,
+    JOB_FAMILY_WINDOWED_AGGREGATION,
+    WINDOWED_AGGREGATION_RULE_TYPE,
+)
 from flink_app_agent.template_registry import TemplateDefinition, TemplateRegistry, TemplateRegistryError
 
 
@@ -20,6 +25,7 @@ def test_template_registry_resolves_known_template_for_spec(tmp_path: Path) -> N
     template = registry.resolve_for_spec(FlinkJobSpec.demo())
 
     assert template.template_id == "flink_kafka_rule_job"
+    assert template.job_family == JOB_FAMILY_KEYED_RULE
     assert template.template_path == tmp_path / "flink_kafka_rule_job"
     assert template.description == "Kafka-to-Kafka keyed rule job with event-time processing."
     assert template.runtime == "Java / Apache Flink DataStream"
@@ -40,6 +46,7 @@ def test_template_registry_resolves_windowed_aggregation_template(tmp_path: Path
     template = registry.resolve_for_spec(FlinkJobSpec.demo_windowed_aggregation())
 
     assert template.template_id == "flink_windowed_aggregation_job"
+    assert template.job_family == JOB_FAMILY_WINDOWED_AGGREGATION
     assert template.template_path == tmp_path / "flink_windowed_aggregation_job"
     assert template.description == "Kafka-to-Kafka windowed aggregation job with event-time processing."
     assert template.runtime == "Java / Apache Flink DataStream"
@@ -52,6 +59,7 @@ def test_template_registry_rejects_unsupported_rule_type(tmp_path: Path) -> None
             TemplateDefinition(
                 template_id="flink_kafka_rule_job",
                 template_path=tmp_path / "flink_kafka_rule_job",
+                job_family=JOB_FAMILY_KEYED_RULE,
                 supported_rule_types=frozenset({"two_events_within_window"}),
                 description="Kafka-to-Kafka keyed rule job with event-time processing.",
                 runtime="Java / Apache Flink DataStream",
@@ -59,6 +67,7 @@ def test_template_registry_rejects_unsupported_rule_type(tmp_path: Path) -> None
             TemplateDefinition(
                 template_id="flink_windowed_aggregation_job",
                 template_path=tmp_path / "flink_windowed_aggregation_job",
+                job_family=JOB_FAMILY_WINDOWED_AGGREGATION,
                 supported_rule_types=frozenset({WINDOWED_AGGREGATION_RULE_TYPE}),
                 description="Kafka-to-Kafka windowed aggregation job with event-time processing.",
                 runtime="Java / Apache Flink DataStream",
@@ -66,6 +75,7 @@ def test_template_registry_rejects_unsupported_rule_type(tmp_path: Path) -> None
         )
     )
     unsupported_spec = FlinkJobSpec.model_construct(
+        job_family=JOB_FAMILY_KEYED_RULE,
         job_name="demo-job",
         source_topic="payments",
         sink_topic="alerts",
@@ -78,5 +88,5 @@ def test_template_registry_rejects_unsupported_rule_type(tmp_path: Path) -> None
         time_window_minutes=5,
     )
 
-    with pytest.raises(TemplateRegistryError, match="supports rule_type"):
+    with pytest.raises(TemplateRegistryError, match="job_family"):
         registry.resolve_for_spec(unsupported_spec)

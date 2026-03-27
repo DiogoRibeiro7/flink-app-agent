@@ -10,12 +10,19 @@ from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flink_app_agent.spec import ALLOWED_RULE_TYPE, FlinkJobSpec, WINDOWED_AGGREGATION_RULE_TYPE
+from flink_app_agent.spec import (
+    ALLOWED_RULE_TYPE,
+    FlinkJobSpec,
+    JOB_FAMILY_KEYED_RULE,
+    JOB_FAMILY_WINDOWED_AGGREGATION,
+    WINDOWED_AGGREGATION_RULE_TYPE,
+)
 
 
 def test_valid_spec_creation() -> None:
     """A complete valid payload should build a spec successfully."""
     spec = FlinkJobSpec(
+        job_family=JOB_FAMILY_KEYED_RULE,
         job_name="Fraud Alert Job",
         source_topic="payments",
         sink_topic="alerts",
@@ -28,6 +35,7 @@ def test_valid_spec_creation() -> None:
         time_window_minutes=10,
     )
 
+    assert spec.job_family == JOB_FAMILY_KEYED_RULE
     assert spec.job_name == "fraud-alert-job"
     assert spec.source_topic == "payments"
     assert spec.sink_topic == "alerts"
@@ -135,6 +143,7 @@ def test_class_name_fields_are_normalized() -> None:
 def test_whitespace_cleanup_is_applied_to_topics_and_rule_condition() -> None:
     """Whitespace trimming should apply before validation on plain string fields."""
     spec = FlinkJobSpec(
+        job_family=JOB_FAMILY_KEYED_RULE,
         job_name="demo-job",
         source_topic=" payments ",
         sink_topic=" alerts ",
@@ -152,11 +161,24 @@ def test_whitespace_cleanup_is_applied_to_topics_and_rule_condition() -> None:
     assert spec.rule_condition == "second payment occurs within 10 minutes"
 
 
+def test_invalid_job_family() -> None:
+    """Only the current supported job families should validate."""
+    payload = FlinkJobSpec.demo().model_dump()
+    payload["job_family"] = "unsupported_family"
+
+    with pytest.raises(
+        ValidationError,
+        match="job_family must be one of:",
+    ):
+        FlinkJobSpec.model_validate(payload)
+
+
 def test_template_dict_is_flat() -> None:
     """The template dictionary should expose plain string values only."""
     spec = FlinkJobSpec.demo()
 
     assert spec.to_template_dict() == {
+        "JOB_FAMILY": "keyed_temporal_rule",
         "JOB_NAME": "fraud-alert-job",
         "SOURCE_TOPIC": "payments",
         "SINK_TOPIC": "alerts",

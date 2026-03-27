@@ -1,4 +1,4 @@
-"""Extraction layer boundaries and deterministic implementations for v0.3."""
+"""Extraction layer boundaries and deterministic implementations for v0.4."""
 
 from __future__ import annotations
 
@@ -7,7 +7,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from .spec import ALLOWED_RULE_TYPE, FlinkJobSpec, WINDOWED_AGGREGATION_RULE_TYPE
+from .spec import (
+    ALLOWED_RULE_TYPE,
+    FlinkJobSpec,
+    JOB_FAMILY_KEYED_RULE,
+    JOB_FAMILY_WINDOWED_AGGREGATION,
+    WINDOWED_AGGREGATION_RULE_TYPE,
+)
 from .utils import slugify, to_pascal_case
 
 
@@ -151,6 +157,7 @@ class DeterministicSpecPayloadExtractor:
         """Build the payload for the keyed rule template family."""
         output_event_name = to_pascal_case(self._extract_output_event_name(request))
         return {
+            "job_family": JOB_FAMILY_KEYED_RULE,
             "job_name": slugify(output_event_name) + "-job",
             "source_topic": source_topic,
             "sink_topic": self.default_sink_topic,
@@ -175,6 +182,7 @@ class DeterministicSpecPayloadExtractor:
         """Build the payload for the windowed aggregation template family."""
         output_event_name = to_pascal_case(f"{source_topic} count")
         return {
+            "job_family": JOB_FAMILY_WINDOWED_AGGREGATION,
             "job_name": slugify(f"{source_topic} count") + "-job",
             "source_topic": source_topic,
             "sink_topic": self.default_aggregation_sink_topic,
@@ -205,11 +213,14 @@ class DeterministicSpecPayloadExtractor:
                 r"consume ([A-Za-z0-9._-]+) from kafka",
                 r"build a flink job reading ([A-Za-z0-9._-]+)",
                 r"read topic ([A-Za-z0-9._-]+)",
+                r"stream from kafka ([A-Za-z0-9._-]+)",
+                r"listen to kafka ([A-Za-z0-9._-]+)",
                 r"reading ([A-Za-z0-9._-]+)",
             ],
             error_message=(
                 "Unable to parse source_topic. Supported variants include "
-                "'Read from Kafka <topic>', 'Consume <topic> from Kafka', or "
+                "'Read from Kafka <topic>', 'Consume <topic> from Kafka', "
+                "'Stream from Kafka <topic>', or "
                 "'Build a Flink job reading <topic>'."
             ),
         )
@@ -223,11 +234,12 @@ class DeterministicSpecPayloadExtractor:
                 r"keyed by ([A-Za-z0-9_.-]+)",
                 r"keying by ([A-Za-z0-9_.-]+)",
                 r"group by ([A-Za-z0-9_.-]+)",
+                r"partition by ([A-Za-z0-9_.-]+)",
             ],
             error_message=(
                 "Unable to parse key_by. Supported variants include "
-                "'key by <field>', 'keyed by <field>', 'keying by <field>', or "
-                "'group by <field>'."
+                "'key by <field>', 'keyed by <field>', 'keying by <field>', "
+                "'group by <field>', or 'partition by <field>'."
             ),
         )
 

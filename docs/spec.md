@@ -6,6 +6,7 @@ The internal spec is defined in `src/flink_app_agent/spec.py` as `FlinkJobSpec`.
 
 The current model is intentionally small:
 
+- `job_family`
 - `job_name`
 - `source_topic`
 - `sink_topic`
@@ -20,6 +21,13 @@ The current model is intentionally small:
 ## Validation And Normalization
 
 Validation is strict because the spec is the handoff into template generation.
+
+### `job_family`
+
+- must be one of the supported job families:
+  - `keyed_temporal_rule`
+  - `windowed_aggregation`
+- determines high-level template selection alongside `rule_type`
 
 ### `job_name`
 
@@ -64,6 +72,7 @@ The generator expects the spec to already be safe to substitute into filenames, 
 
 `FlinkJobSpec.to_template_dict()` returns the flat placeholder map used by `generator.py`:
 
+- `JOB_FAMILY`
 - `JOB_NAME`
 - `SOURCE_TOPIC`
 - `SINK_TOPIC`

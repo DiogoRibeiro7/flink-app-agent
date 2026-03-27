@@ -1,45 +1,47 @@
 # Roadmap
 
-This roadmap reflects the repository after the current `v0.3` changes. It is intentionally conservative. The project is still a small local tool, and future work should keep that shape unless there is a clear reason to broaden it.
+This roadmap reflects the repository after the current `v0.4` changes. It is intentionally conservative. The project is still a small local tool, and future work should keep that shape unless there is a clear reason to broaden it.
 
-## Current v0.3
+## v0.3
 
-The repository currently provides:
+`v0.3` provided:
 
 - deterministic request extraction with explicit extraction-layer boundaries
 - strict spec validation and normalization
 - explicit template registry and template selection
-- one real local Flink template
+- two real local Flink templates
 - local project generation with placeholder rendering safeguards
 - deterministic post-generation review
 - machine-readable generation report output
 - a simple CLI with small inspection modes
 - fixture-based and end-to-end local tests
 
-This is enough for a narrow request-to-project path, but it is still intentionally limited. The repository is not yet trying to be a general Flink generation platform.
+## Current v0.4
 
-## Likely v0.4
+`v0.4` extends the repository from a single-family tool into a small multi-family generator:
 
-The next likely version should improve confidence and coverage without changing the tool’s basic shape.
+- explicit `job_family` field on the spec model (`keyed_temporal_rule`, `windowed_aggregation`)
+- deterministic extractor recognizes and distinguishes both families
+- two real template families with family-aware rendering
+- template registry resolves by both `job_family` and `rule_type`
+- `{{JOB_FAMILY}}` placeholder in generated project READMEs
+- family-specific review checks (function file existence, job family in README)
+- generation report includes `job_family`
+- CLI summaries show job family
+- broader deterministic extraction patterns (`stream from kafka`, `listen to kafka`, `partition by`)
+- richer fixture-based end-to-end tests covering both families
+- updated documentation across all docs
 
-Primary themes:
+## Likely v0.5
 
-- second real template family
-- richer repair coverage for safe obvious issues
-- richer deterministic review checks
-- better request interpretation within the current narrow scope
-- stricter output guarantees
+The next likely version should improve confidence within the current multi-family shape:
 
-Likely changes:
+- richer repair coverage for safe obvious issues beyond trailing placeholders
+- stronger review checks for generated content consistency
+- better request interpretation within the narrow scope
+- stricter output guarantees per template family
 
-- add one second template that is materially different from the current keyed rule job
-- refine template selection so mismatches fail earlier and more clearly
-- broaden deterministic extraction for a few more supported phrasings without moving to open-ended interpretation
-- expand the existing small repair pass only for narrow and auditable cases, such as trivial generated-file inconsistencies
-- strengthen review checks around expected generated files and generated content
-- tighten report contents so successful generation leaves behind a more complete machine-readable summary
-
-Non-goals for `v0.4`:
+Non-goals for `v0.5`:
 
 - many template families
 - broad natural-language understanding
@@ -108,6 +110,7 @@ The following are still not near-term priorities:
 ## Compact Stage Summary
 
 - `v0.3`: stable narrow local pipeline with two real templates, deterministic review, and generation reporting
-- `v0.4`: add one more real template, limited repair, stronger review, and better deterministic request handling
+- `v0.4`: explicit multi-family support, family-aware extraction/registry/review/report, broader patterns, richer tests
+- `v0.5`: richer repairs, stronger review checks, better request handling within the narrow scope
 - `v1.0`: stabilize a small set of templates, keep provider-backed extraction optional, and improve artifact-level guarantees
 - later: optional provider, verification, and packaging improvements if the constrained tool remains maintainable

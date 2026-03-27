@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .spec import FlinkJobSpec
+from .spec import (
+    FlinkJobSpec,
+    JOB_FAMILY_KEYED_RULE,
+    JOB_FAMILY_WINDOWED_AGGREGATION,
+)
 
 
 class TemplateRegistryError(ValueError):
@@ -18,6 +22,7 @@ class TemplateDefinition:
 
     template_id: str
     template_path: Path
+    job_family: str
     supported_rule_types: frozenset[str]
     description: str
     runtime: str
@@ -37,6 +42,7 @@ class TemplateRegistry:
                 TemplateDefinition(
                     template_id="flink_kafka_rule_job",
                     template_path=templates_root / "flink_kafka_rule_job",
+                    job_family=JOB_FAMILY_KEYED_RULE,
                     supported_rule_types=frozenset({"two_events_within_window"}),
                     description="Kafka-to-Kafka keyed rule job with event-time processing.",
                     runtime="Java / Apache Flink DataStream",
@@ -44,6 +50,7 @@ class TemplateRegistry:
                 TemplateDefinition(
                     template_id="flink_windowed_aggregation_job",
                     template_path=templates_root / "flink_windowed_aggregation_job",
+                    job_family=JOB_FAMILY_WINDOWED_AGGREGATION,
                     supported_rule_types=frozenset({"count_by_key_window"}),
                     description="Kafka-to-Kafka windowed aggregation job with event-time processing.",
                     runtime="Java / Apache Flink DataStream",
@@ -59,10 +66,18 @@ class TemplateRegistry:
         raise TemplateRegistryError(f"Unknown template identifier: {template_id}")
 
     def resolve_for_spec(self, spec: FlinkJobSpec) -> TemplateDefinition:
-        """Return the template definition that supports the given spec."""
+        """Return the template definition that supports the given spec.
+
+        Resolution matches on both job_family and rule_type. Both must agree
+        with a registered template for resolution to succeed.
+        """
         for template in self.templates:
-            if spec.rule_type in template.supported_rule_types:
+            if (
+                template.job_family == spec.job_family
+                and spec.rule_type in template.supported_rule_types
+            ):
                 return template
         raise TemplateRegistryError(
-            f"No registered template supports rule_type '{spec.rule_type}'."
+            f"No registered template supports job_family "
+            f"'{spec.job_family}' with rule_type '{spec.rule_type}'."
         )

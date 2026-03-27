@@ -14,6 +14,7 @@ Each template definition records:
 
 - template identifier
 - template path
+- job family
 - supported rule types
 - short description
 - runtime
@@ -30,7 +31,7 @@ They support:
 
 ## Template Selection
 
-`TemplateRegistry.resolve_for_spec(spec)` chooses a template by checking whether the spec's `rule_type` is supported by a registered template.
+`TemplateRegistry.resolve_for_spec(spec)` chooses a template by checking whether the spec's `job_family` and `rule_type` both match a registered template.
 
 This keeps template lookup explicit and lets unsupported specs fail before rendering starts.
 
@@ -52,8 +53,9 @@ Rendering is intentionally simple. It uses direct placeholder replacement rather
 
 ## Placeholder Set
 
-The current template uses:
+The current templates use:
 
+- `{{JOB_FAMILY}}`
 - `{{JOB_NAME}}`
 - `{{SOURCE_TOPIC}}`
 - `{{SINK_TOPIC}}`

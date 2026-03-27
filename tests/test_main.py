@@ -31,6 +31,7 @@ def test_main_generates_project_and_prints_summary(
 
     assert exit_code == 0
     assert "Parsed spec summary:" in captured.out
+    assert "Job family: keyed_temporal_rule" in captured.out
     assert "Chosen template: flink_kafka_rule_job" in captured.out
     assert f"Generation target: {output_dir}" in captured.out
     assert "Generated files count:" in captured.out
@@ -59,6 +60,7 @@ def test_main_generates_windowed_aggregation_project(tmp_path: Path, capsys) -> 
     captured = capsys.readouterr()
 
     assert exit_code == 0
+    assert "Job family: windowed_aggregation" in captured.out
     assert "Chosen template: flink_windowed_aggregation_job" in captured.out
     assert f"Generation report: {output_dir / REPORT_FILENAME}" in captured.out
     assert (output_dir / REPORT_FILENAME).exists()

@@ -1,8 +1,10 @@
 # {{JOB_NAME}}
 
-This project was generated from the single `flink_kafka_rule_job` template.
+Job family: `{{JOB_FAMILY}}`
 
-It is a small v0.2 Flink DataStream scaffold that shows:
+This project was generated from the `flink_kafka_rule_job` template.
+
+It is a Flink DataStream scaffold that shows:
 
 - Kafka source wiring for `{{SOURCE_TOPIC}}`
 - event-time extraction from `{{EVENT_TIME_FIELD}}`
@@ -27,6 +29,7 @@ The generated job currently:
 
 The generator replaces these values:
 
+- `{{JOB_FAMILY}}`: high-level job family
 - `{{JOB_NAME}}`: job and Maven artifact name
 - `{{SOURCE_TOPIC}}`: Kafka source topic
 - `{{SINK_TOPIC}}`: Kafka sink topic

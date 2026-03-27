@@ -53,6 +53,7 @@ def test_generation_report_file_is_created_with_key_fields(tmp_path: Path) -> No
 
     assert report_path == output_dir / REPORT_FILENAME
     assert payload["request_text"] == request
+    assert payload["job_family"] == "keyed_temporal_rule"
     assert payload["selected_template"] == "flink_kafka_rule_job"
     assert payload["parsed_spec_summary"]["source_topic"] == "sensor-events"
     assert payload["generated_files_count"] == len(generated_files)
