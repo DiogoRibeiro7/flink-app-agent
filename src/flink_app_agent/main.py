@@ -7,11 +7,11 @@ import json
 import sys
 from pathlib import Path
 
+from .config import ConfigurationError, ExtractorConfig, resolve_extractor_config
 from .constants import GENERATION_REPORT_FILENAME
 from .generation_context import GenerationContext
 from .generator import ProjectGenerator
 from .llm import (
-    ProviderCallable,
     ProviderExtractionError,
     SpecParsingError,
     build_default_spec_extractor,
@@ -76,8 +76,11 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         output_dir = Path(args.output) if args.output is not None else Path(".")
+        extractor_config = resolve_extractor_config(
+            cli_extractor=args.extractor,
+        )
         context = build_generation_context(
-            args.request, output_dir, extractor_type=args.extractor,
+            args.request, output_dir, extractor_config=extractor_config,
         )
 
         print_parsed_spec_summary(context.spec)
@@ -93,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         if context.review_result is not None and not context.review_result.success:
             return 1
         return 0
-    except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, ProviderExtractionError, ValueError) as exc:
+    except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, ProviderExtractionError, ConfigurationError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:
@@ -103,17 +106,16 @@ def main(argv: list[str] | None = None) -> int:
 
 def parse_request(
     request: str,
-    extractor_type: str = "deterministic",
-    call_provider: ProviderCallable | None = None,
+    extractor_config: ExtractorConfig | None = None,
 ) -> FlinkJobSpec:
     """Parse a natural-language request into a validated ``FlinkJobSpec``."""
-    if extractor_type == "provider":
-        if call_provider is None:
-            raise ValueError(
-                "Provider extractor requires a call_provider callable. "
-                "Set FLINK_APP_AGENT_PROVIDER or pass call_provider explicitly."
+    config = extractor_config or resolve_extractor_config()
+    if config.mode == "provider":
+        if config.call_provider is None:
+            raise ConfigurationError(
+                "Provider mode is selected but no call_provider callable was resolved."
             )
-        extractor = build_provider_spec_extractor(call_provider)
+        extractor = build_provider_spec_extractor(config.call_provider)
     else:
         extractor = build_default_spec_extractor()
     return extractor.extract_spec(request)
@@ -127,14 +129,12 @@ def should_print_template_info(args: argparse.Namespace) -> bool:
 def build_generation_context(
     request_text: str,
     output_dir: Path,
-    extractor_type: str = "deterministic",
-    call_provider: ProviderCallable | None = None,
+    extractor_config: ExtractorConfig | None = None,
 ) -> GenerationContext:
     """Build the small shared context used across the generation pipeline."""
     spec = parse_request(
         request_text,
-        extractor_type=extractor_type,
-        call_provider=call_provider,
+        extractor_config=extractor_config,
     )
     template = resolve_template(spec)
     return GenerationContext(
