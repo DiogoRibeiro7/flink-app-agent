@@ -71,11 +71,22 @@ The report captures:
 - output directory
 - generated file count
 - generated file list
+- extraction provenance
 - overall pipeline status
 - repair pass summary (repairs applied, passes run)
 - structural check summary
 - compile verification summary (if attempted)
 - warnings
+
+The extraction provenance block is intentionally compact. It records:
+
+- selected extraction mode
+- fallback policy
+- actual extraction path used
+- whether fallback occurred
+- provider availability status when relevant
+- extraction warning summary
+- extraction error summary
 
 ## Pipeline Status
 
@@ -95,3 +106,9 @@ The review checks that the generated project is structurally complete.
 The compile verification optionally proves the generated Java compiles.
 
 The JSON report preserves the full pipeline state for scripting and automation.
+
+In v0.6 that includes enough extraction provenance to distinguish:
+
+- a normal deterministic run
+- a successful provider-backed run
+- a provider-backed run that degraded to deterministic fallback

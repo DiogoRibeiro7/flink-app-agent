@@ -8,6 +8,8 @@
 
 The repository is intentionally small. It is meant to make one path from request text to generated project explicit and testable, not to cover broad Flink design space or open-ended code generation.
 
+Deterministic extraction remains the default. Provider-backed extraction is available as an optional path behind the same extraction interface, but it is still constrained by strict normalization, spec validation, and local template selection.
+
 ## Scope
 
 Current scope is deliberately narrow:
@@ -15,12 +17,13 @@ Current scope is deliberately narrow:
 - one CLI entry point
 - one strict spec model with explicit job family support
 - one deterministic extractor recognizing two job families
+- one optional provider-backed extraction path selected through the CLI or environment
 - two registered real templates (keyed temporal rule and windowed aggregation)
 - one local generator with family-aware placeholder rendering
 - one deterministic repair loop for safe fixups (trailing placeholders, whitespace, newlines)
 - one deterministic review step with family-specific structural checks
 - one optional compile-only verification step (requires Maven)
-- one JSON report artifact with pipeline status, repair pass, and verification results
+- one JSON report artifact with pipeline status, extraction provenance, repair pass, and verification results
 
 The project does not try to infer many job families, manage infrastructure, or hide the generation process behind a larger service.
 
@@ -29,19 +32,21 @@ The project does not try to infer many job families, manage infrastructure, or h
 The current pipeline is:
 
 1. `main.py` parses CLI arguments
-2. `llm.py` preprocesses the request, loads the extraction prompt, and runs the deterministic extractor
-3. `spec.py` validates and normalizes the resulting `FlinkJobSpec`
+2. `llm.py` preprocesses the request, loads the extraction prompt, and runs either the deterministic extractor or the optional provider-backed extractor
+3. provider-backed payloads are normalized in `provider_normalizer.py`, then all payloads go through the same `spec.py` validation path
 4. `template_registry.py` resolves the local template for the spec
 5. `generator.py` copies the template, renders placeholders in safe text files, and returns generated paths
 6. `repair.py` runs a deterministic repair loop for safe fixups
 7. `review.py` runs lightweight file-based structural checks on the generated project
 8. `verification.py` optionally runs `mvn compile` on the generated project (with `--verify`)
-9. `report.py` writes `generation_report.json` with full pipeline status
+9. `report.py` writes `generation_report.json` with full pipeline status and extraction provenance
 10. `main.py` prints a concise summary
 
 Deeper implementation notes live in:
 
 - [Architecture](docs/architecture.md)
+- [Extraction Modes](docs/extraction.md)
+- [Provider Extraction Boundary](docs/provider.md)
 - [Spec Model](docs/spec.md)
 - [Templates](docs/templates.md)
 - [Review And Report](docs/review.md)
@@ -54,6 +59,8 @@ flink-app-agent/
 ├── ROADMAP.md
 ├── docs/
 │   ├── architecture.md
+│   ├── extraction.md
+│   ├── provider.md
 │   ├── review.md
 │   ├── spec.md
 │   └── templates.md
@@ -95,6 +102,27 @@ Run the default generation flow:
 poetry run flink-app-agent \
   --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
   --output ./out
+```
+
+Run with the optional provider-backed extraction path:
+
+```bash
+export FLINK_AGENT_PROVIDER_ENTRY_POINT="my_provider:call_provider"
+poetry run flink-app-agent \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --output ./out \
+  --extractor provider
+```
+
+Allow deterministic fallback if provider extraction fails:
+
+```bash
+export FLINK_AGENT_PROVIDER_ENTRY_POINT="my_provider:call_provider"
+poetry run flink-app-agent \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --output ./out \
+  --extractor provider \
+  --fallback deterministic
 ```
 
 Run with optional compile verification (requires Maven on PATH):
@@ -170,6 +198,9 @@ Parsed spec summary:
   "time_window_minutes": 20
 }
 
+Requested extractor: deterministic
+Extraction path: deterministic
+Fallback occurred: no
 Job family: keyed_temporal_rule
 Chosen template: flink_kafka_rule_job
 Generation target: out
@@ -177,6 +208,15 @@ Generated files count: 7
 Generation report: out\generation_report.json
 Repair pass: 1 passes, 0 repairs
 Structural review summary: passed, 10 passed, 0 failed, 0 warnings
+```
+
+If provider-backed extraction is selected, the summary also shows the requested mode and the actual path used. A fallback run looks like:
+
+```text
+Requested extractor: provider
+Extraction path: provider -> deterministic
+Fallback occurred: yes
+Fallback reason: ProviderExtractionError: Provider returned invalid JSON: ...
 ```
 
 Example generated project shape:
@@ -201,14 +241,17 @@ out/
 
 Current limitations are explicit:
 
-- no external LLM or API calls
+- no built-in remote provider integration
 - no web service or database
 - no Flink runtime execution
 - no Docker or deployment workflow
 - compile verification is opt-in and requires Maven on PATH
 - only two job families (keyed temporal rule and windowed aggregation)
 - only two supported rule types
-- request parsing is still deterministic and pattern-based
+- deterministic parsing is still pattern-based and remains the default
+- provider-backed extraction is optional and only supported through an injected callable boundary
+- provider-backed output is accepted only if it survives normalization and strict spec validation
+- fallback is limited to deterministic extraction when explicitly configured
 - repairs are intentionally limited to safe text cleanup only (no model-based patching)
 - some fields are filled through fixed defaults rather than user-controlled extraction
 - no joins, enrichment, or sessionization families yet
