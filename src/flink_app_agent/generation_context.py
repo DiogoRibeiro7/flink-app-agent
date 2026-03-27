@@ -26,6 +26,7 @@ class GenerationContext:
             requested_mode="deterministic",
             fallback_policy="fail",
             extractor_used="deterministic",
+            actual_path=("deterministic",),
         ),
     )
     generated_files: list[Path] = field(default_factory=list)

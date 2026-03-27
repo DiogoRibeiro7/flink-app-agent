@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -23,12 +23,27 @@ REPORT_FILENAME = GENERATION_REPORT_FILENAME
 class ExtractionOutcomeReport:
     """Serializable extraction provenance summary."""
 
-    requested_mode: str
+    selected_mode: str
     fallback_policy: str
-    extractor_used: str
-    fallback_triggered: bool
-    fallback_reason: str | None
-    provider_error: str | None
+    actual_path: list[str]
+    fallback_occurred: bool
+    provider_status: str | None
+    warnings: list[str]
+    errors: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a compact deterministic extraction provenance dictionary."""
+        payload: dict[str, Any] = {
+            "selected_mode": self.selected_mode,
+            "fallback_policy": self.fallback_policy,
+            "actual_path": list(self.actual_path),
+            "fallback_occurred": self.fallback_occurred,
+        }
+        if self.provider_status is not None:
+            payload["provider_status"] = self.provider_status
+        payload["warnings"] = list(self.warnings)
+        payload["errors"] = list(self.errors)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -97,14 +112,16 @@ class GenerationReport:
             requested_mode="deterministic",
             fallback_policy="fail",
             extractor_used="deterministic",
+            actual_path=("deterministic",),
         )
         extraction_report = ExtractionOutcomeReport(
-            requested_mode=eo.requested_mode,
+            selected_mode=eo.requested_mode,
             fallback_policy=eo.fallback_policy,
-            extractor_used=eo.extractor_used,
-            fallback_triggered=eo.fallback_triggered,
-            fallback_reason=eo.fallback_reason,
-            provider_error=eo.provider_error,
+            actual_path=list(eo.actual_path or (eo.extractor_used,)),
+            fallback_occurred=eo.fallback_triggered,
+            provider_status=eo.provider_status,
+            warnings=list(_summarize_extraction_warnings(eo)),
+            errors=list(_summarize_extraction_errors(eo)),
         )
         rr = repair_result or RepairResult()
         repair_report = RepairPassReport(
@@ -148,7 +165,39 @@ class GenerationReport:
 
     def to_dict(self) -> dict[str, Any]:
         """Return the report as a plain JSON-serializable dictionary."""
-        return asdict(self)
+        payload: dict[str, Any] = {
+            "request_text": self.request_text,
+            "job_family": self.job_family,
+            "parsed_spec_summary": self.parsed_spec_summary,
+            "selected_template": self.selected_template,
+            "output_directory": self.output_directory,
+            "generated_files_count": self.generated_files_count,
+            "generated_files": list(self.generated_files),
+            "extraction_outcome": self.extraction_outcome.to_dict(),
+            "pipeline_status": self.pipeline_status,
+            "repair_pass": {
+                "repairs": list(self.repair_pass.repairs),
+                "passes_run": self.repair_pass.passes_run,
+                "any_repairs": self.repair_pass.any_repairs,
+            },
+            "structural_check": {
+                "overall_status": self.structural_check.overall_status,
+                "success": self.structural_check.success,
+                "passed_checks": list(self.structural_check.passed_checks),
+                "failed_checks": list(self.structural_check.failed_checks),
+                "warnings": list(self.structural_check.warnings),
+            },
+            "compile_verification": None,
+            "warnings": list(self.warnings),
+        }
+        if self.compile_verification is not None:
+            payload["compile_verification"] = {
+                "overall_status": self.compile_verification.overall_status,
+                "attempted": self.compile_verification.attempted,
+                "success": self.compile_verification.success,
+                "skipped_reason": self.compile_verification.skipped_reason,
+            }
+        return payload
 
     @classmethod
     def from_context(cls, context: GenerationContext) -> "GenerationReport":
@@ -190,3 +239,21 @@ def write_generation_report(output_dir: Path, report: GenerationReport) -> Path:
     report_path = output_dir / REPORT_FILENAME
     report_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
     return report_path
+
+
+def _summarize_extraction_warnings(outcome: ExtractionOutcome) -> tuple[str, ...]:
+    """Build a stable warning summary for extraction provenance."""
+    if outcome.warnings:
+        return outcome.warnings
+    if outcome.fallback_triggered and outcome.fallback_reason is not None:
+        return (outcome.fallback_reason,)
+    return ()
+
+
+def _summarize_extraction_errors(outcome: ExtractionOutcome) -> tuple[str, ...]:
+    """Build a stable error summary for extraction provenance."""
+    if outcome.errors:
+        return outcome.errors
+    if outcome.provider_error is not None:
+        return (outcome.provider_error,)
+    return ()

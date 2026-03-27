@@ -136,6 +136,7 @@ def parse_request(
             requested_mode=config.mode,
             fallback_policy=config.fallback,
             extractor_used="deterministic",
+            actual_path=("deterministic",),
         )
 
     if config.call_provider is None:
@@ -150,6 +151,8 @@ def parse_request(
             requested_mode="provider",
             fallback_policy=config.fallback,
             extractor_used="provider",
+            actual_path=("provider",),
+            provider_status="available",
         )
     except (ProviderExtractionError, Exception) as exc:
         if config.fallback != "deterministic":
@@ -166,9 +169,15 @@ def parse_request(
             requested_mode="provider",
             fallback_policy="deterministic",
             extractor_used="deterministic",
+            actual_path=("provider", "deterministic"),
             fallback_triggered=True,
             fallback_reason=f"{error_type}: {error_message}",
             provider_error=error_message,
+            provider_status="unavailable",
+            warnings=(
+                "Provider extraction failed; deterministic fallback was used.",
+            ),
+            errors=(f"{error_type}: {error_message}",),
         )
 
 

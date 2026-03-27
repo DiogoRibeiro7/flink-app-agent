@@ -48,9 +48,13 @@ class ExtractionOutcome:
     requested_mode: str
     fallback_policy: str
     extractor_used: str
+    actual_path: tuple[str, ...] = ()
     fallback_triggered: bool = False
     fallback_reason: str | None = None
     provider_error: str | None = None
+    provider_status: str | None = None
+    warnings: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
 
 
 def resolve_extractor_config(
