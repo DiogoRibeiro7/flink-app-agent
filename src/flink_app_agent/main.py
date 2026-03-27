@@ -11,10 +11,12 @@ from .constants import GENERATION_REPORT_FILENAME
 from .generation_context import GenerationContext
 from .generator import ProjectGenerator
 from .llm import SpecParsingError, build_default_spec_extractor
+from .repair import DeterministicRepairer, RepairResult
 from .report import GenerationReport, write_generation_report
 from .review import ReviewResult, StructuralReviewer
 from .spec import FlinkJobSpec
 from .template_registry import TemplateDefinition, TemplateRegistry
+from .verification import CompileVerifier, VerificationResult
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,6 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resolve the template for the request, print template metadata, and exit.",
     )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Run optional Maven compile verification on the generated project.",
+    )
     return parser
 
 
@@ -66,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         context.generated_files = generate_project(context)
-        finalize_generated_project(context)
+        finalize_generated_project(context, verify=args.verify)
 
         print_generation_summary(context)
         if context.review_result is not None and not context.review_result.success:
@@ -120,27 +127,46 @@ def generate_project(context: GenerationContext) -> list[Path]:
     return generator.generate(spec=context.spec, output_dir=context.output_dir)
 
 
-def finalize_generated_project(context: GenerationContext) -> None:
-    """Finalize one generation run with review and report writing.
+def finalize_generated_project(
+    context: GenerationContext,
+    verify: bool = False,
+) -> None:
+    """Finalize one generation run: repair -> review -> verify -> report.
 
-    The review checks that the report artifact exists. The first pass captures
-    the generated project state, the report is written, and then the final
-    review/report pair produces the stable end result consumed by the CLI.
+    The pipeline runs in strict order:
+    1. Deterministic repair loop for safe fixups
+    2. Structural review (checks report exists after first write)
+    3. Optional compile-only verification
+    4. Final report write
     """
-    context.review_result = review_project(context, attempt_repairs=True)
-    context.report_path = write_report(context)
+    context.repair_result = repair_project(context)
     context.review_result = review_project(context)
     context.report_path = write_report(context)
+    context.review_result = review_project(context)
+    if verify:
+        context.verification_result = verify_project(context)
+    context.report_path = write_report(context)
 
 
-def review_project(context: GenerationContext, attempt_repairs: bool = False) -> ReviewResult:
+def repair_project(context: GenerationContext) -> RepairResult:
+    """Run the deterministic repair loop on the generated output."""
+    repairer = DeterministicRepairer()
+    return repairer.repair(output_dir=context.output_dir)
+
+
+def review_project(context: GenerationContext) -> ReviewResult:
     """Run the deterministic structural review for the current generation context."""
     reviewer = StructuralReviewer()
     return reviewer.review(
         output_dir=context.output_dir,
         spec=context.spec,
-        attempt_repairs=attempt_repairs,
     )
+
+
+def verify_project(context: GenerationContext) -> VerificationResult:
+    """Run the optional compile-only verification on the generated output."""
+    verifier = CompileVerifier()
+    return verifier.verify(output_dir=context.output_dir)
 
 
 def write_report(context: GenerationContext) -> Path:
@@ -185,13 +211,23 @@ def print_generation_summary(context: GenerationContext) -> None:
     print("Generated files:")
     for path in context.generated_files:
         print(f"- {path}")
+
+    repair_result = context.repair_result
+    if repair_result is not None:
+        repair_count = len(repair_result.repairs)
+        print(
+            f"Repair pass: {repair_result.passes_run} passes, "
+            f"{repair_count} repairs"
+        )
+        for item in repair_result.repairs:
+            print(f"- REPAIR: {item}")
+
     print(
         "Structural review summary: "
         f"{review_result.overall_status}, "
         f"{len(review_result.passed_checks)} passed, "
         f"{len(review_result.failed_checks)} failed, "
-        f"{len(review_result.warnings)} warnings, "
-        f"{len(review_result.repairs)} repairs"
+        f"{len(review_result.warnings)} warnings"
     )
     for item in review_result.passed_checks:
         print(f"- PASS: {item}")
@@ -199,8 +235,16 @@ def print_generation_summary(context: GenerationContext) -> None:
         print(f"- FAIL: {item}")
     for item in review_result.warnings:
         print(f"- WARN: {item}")
-    for item in review_result.repairs:
-        print(f"- REPAIR: {item}")
+
+    verification_result = context.verification_result
+    if verification_result is not None:
+        print(f"Compile verification: {verification_result.overall_status}")
+        if verification_result.skipped_reason:
+            print(f"  Reason: {verification_result.skipped_reason}")
+        if verification_result.attempted and not verification_result.success:
+            if verification_result.stderr:
+                stderr_preview = verification_result.stderr[:500]
+                print(f"  Stderr: {stderr_preview}")
 
 
 if __name__ == "__main__":

@@ -10,10 +10,11 @@ The default CLI path in `src/flink_app_agent/main.py` performs:
 2. spec validation
 3. template resolution
 4. template rendering
-5. structural review
-6. limited safe repair when applicable
-7. generation report writing
-8. terminal summary output
+5. deterministic repair loop
+6. structural review
+7. optional compile-only verification (with `--verify`)
+8. generation report writing
+9. terminal summary output
 
 The same entry point also supports two inspection-only modes:
 
@@ -57,11 +58,28 @@ The current registry contains two active template definitions:
 - `flink_kafka_rule_job`
 - `flink_windowed_aggregation_job`
 
-## Review And Reporting Boundary
+## Repair Boundary
 
 After generation:
 
-- `review.py` performs deterministic file-based checks and a narrow repair pass for safe cases
-- `report.py` serializes the run into `generation_report.json`
+- `repair.py` runs a deterministic multi-pass repair loop for safe fixups
+- Repair strategies: trailing placeholder removal, missing final newline, trailing whitespace
+- The loop is idempotent and stops early when no new repairs are found
+
+## Review And Reporting Boundary
+
+After repair:
+
+- `review.py` performs deterministic file-based structural checks
+- `report.py` serializes the full pipeline state into `generation_report.json`
 
 The review step is intentionally lightweight. It checks project structure and obvious rendering problems, but it does not compile Java or run Flink.
+
+## Verification Boundary
+
+After review:
+
+- `verification.py` optionally runs `mvn compile` on the generated project
+- Verification is opt-in via `--verify` and requires Maven on PATH
+- If Maven is not available, verification is skipped gracefully
+- The result is captured in the generation report

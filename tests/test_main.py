@@ -37,6 +37,7 @@ def test_main_generates_project_and_prints_summary(
     assert "Generated files count:" in captured.out
     assert f"Generation report: {output_dir / REPORT_FILENAME}" in captured.out
     assert "Generated files:" in captured.out
+    assert "Repair pass:" in captured.out
     assert "Structural review summary:" in captured.out
     assert "0 failed" in captured.out
     assert str(output_dir / "README.md") in captured.out

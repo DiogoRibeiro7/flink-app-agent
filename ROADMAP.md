@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap reflects the repository after the current `v0.4` changes. It is intentionally conservative. The project is still a small local tool, and future work should keep that shape unless there is a clear reason to broaden it.
+This roadmap reflects the repository after the current `v0.5` changes. It is intentionally conservative. The project is still a small local tool, and future work should keep that shape unless there is a clear reason to broaden it.
 
 ## v0.3
 
@@ -16,7 +16,7 @@ This roadmap reflects the repository after the current `v0.4` changes. It is int
 - a simple CLI with small inspection modes
 - fixture-based and end-to-end local tests
 
-## Current v0.4
+## v0.4
 
 `v0.4` extends the repository from a single-family tool into a small multi-family generator:
 
@@ -32,21 +32,36 @@ This roadmap reflects the repository after the current `v0.4` changes. It is int
 - richer fixture-based end-to-end tests covering both families
 - updated documentation across all docs
 
-## Likely v0.5
+## Current v0.5
 
-The next likely version should improve confidence within the current multi-family shape:
+`v0.5` adds a repair loop and optional compile verification to make the pipeline more trustworthy:
 
-- richer repair coverage for safe obvious issues beyond trailing placeholders
-- stronger review checks for generated content consistency
-- better request interpretation within the narrow scope
-- stricter output guarantees per template family
+- standalone `repair.py` module with a deterministic multi-pass repair loop
+- repair strategies: trailing placeholder removal, missing final newline, trailing whitespace
+- standalone `verification.py` module for optional `mvn compile` verification
+- refined staged pipeline: generate → repair → review → verify (optional) → report
+- `--verify` CLI flag for opt-in compile verification
+- generation report now includes `pipeline_status`, `repair_pass`, and `compile_verification`
+- review module simplified to pure structural checks (repair logic extracted)
+- fixed missing `WindowedCountProcessWindowFunction` import in windowed aggregation template
+- new test modules: `test_repair.py` (5 tests), `test_verification.py` (3 tests)
+- 70 total tests, all deterministic and local
 
-Non-goals for `v0.5`:
+## Likely v0.6
+
+The next likely version should focus on:
+
+- richer compile verification feedback (structured error extraction)
+- broader deterministic extraction patterns
+- stronger review checks for content consistency per family
+- optional generated-project test execution
+
+Non-goals for `v0.6`:
 
 - many template families
 - broad natural-language understanding
 - hosted services
-- compile-and-run verification by default
+- full autonomous repair
 
 ## v1.0 Target
 
@@ -111,6 +126,7 @@ The following are still not near-term priorities:
 
 - `v0.3`: stable narrow local pipeline with two real templates, deterministic review, and generation reporting
 - `v0.4`: explicit multi-family support, family-aware extraction/registry/review/report, broader patterns, richer tests
-- `v0.5`: richer repairs, stronger review checks, better request handling within the narrow scope
+- `v0.5`: repair loop, optional compile verification, refined staged pipeline, template compile fixes
+- `v0.6`: richer verification feedback, broader extraction, content consistency checks
 - `v1.0`: stabilize a small set of templates, keep provider-backed extraction optional, and improve artifact-level guarantees
 - later: optional provider, verification, and packaging improvements if the constrained tool remains maintainable
