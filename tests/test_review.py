@@ -58,7 +58,13 @@ def test_structural_review_warns_when_test_scaffold_is_missing(tmp_path: Path) -
     output_dir = tmp_path / "generated"
     main_job_path = output_dir / "src" / "main" / "java" / "com" / "example" / "FraudAlertJob.java"
     main_job_path.parent.mkdir(parents=True, exist_ok=True)
-    (output_dir / "README.md").write_text("# fraud-alert-job\nsource=payments\nsink=alerts\n", encoding="utf-8")
+    functions_dir = output_dir / "src" / "main" / "java" / "com" / "example" / "functions"
+    functions_dir.mkdir(parents=True, exist_ok=True)
+    (functions_dir / "RuleProcessFunction.java").write_text("class RuleProcessFunction {}\n", encoding="utf-8")
+    (output_dir / "README.md").write_text(
+        "# fraud-alert-job\nfamily=keyed_temporal_rule\nsource=payments\nsink=alerts\n",
+        encoding="utf-8",
+    )
     (output_dir / GENERATION_REPORT_FILENAME).write_text("{}", encoding="utf-8")
     main_job_path.write_text(
         "public class FraudAlertJob { String source = \"payments\"; String sink = \"alerts\"; }\n",

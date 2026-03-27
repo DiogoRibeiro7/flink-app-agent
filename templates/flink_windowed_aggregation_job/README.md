@@ -1,9 +1,11 @@
 # {{JOB_NAME}}
 
+Job family: `{{JOB_FAMILY}}`
+
 This project was generated from the `flink_windowed_aggregation_job` template in
 `flink-app-agent`.
 
-It is a small starter for a Kafka-to-Kafka Flink DataStream windowed aggregation job that:
+It is a starter for a Kafka-to-Kafka Flink DataStream windowed aggregation job that:
 
 - reads events from `{{SOURCE_TOPIC}}`
 - extracts event time from `{{EVENT_TIME_FIELD}}`
@@ -14,6 +16,7 @@ It is a small starter for a Kafka-to-Kafka Flink DataStream windowed aggregation
 
 ## Injected Values
 
+- `{{JOB_FAMILY}}`
 - `{{JOB_NAME}}`
 - `{{SOURCE_TOPIC}}`
 - `{{SINK_TOPIC}}`

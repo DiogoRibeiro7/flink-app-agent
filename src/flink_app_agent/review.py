@@ -7,7 +7,12 @@ from pathlib import Path
 
 from .constants import GENERATION_REPORT_FILENAME
 from .generator import PLACEHOLDER_PATTERN, SAFE_TEXT_EXTENSIONS, build_main_class_name
-from .spec import FlinkJobSpec, WINDOWED_AGGREGATION_RULE_TYPE
+from .spec import (
+    FlinkJobSpec,
+    JOB_FAMILY_KEYED_RULE,
+    JOB_FAMILY_WINDOWED_AGGREGATION,
+    WINDOWED_AGGREGATION_RULE_TYPE,
+)
 
 
 REPORT_FILENAME = GENERATION_REPORT_FILENAME
@@ -84,6 +89,8 @@ class StructuralReviewer:
             result.passed_checks.append("No unresolved placeholders remain in generated text files.")
 
         self._check_expected_topics(expected_paths, spec, result)
+        self._check_family_function_file(output_dir, spec, result)
+        self._check_job_family_in_readme(expected_paths, spec, result)
         self._check_optional_test_scaffold(output_dir, spec, result)
 
         return result.finalize()
@@ -159,6 +166,49 @@ class StructuralReviewer:
             job_text = main_job_path.read_text(encoding="utf-8")
             self._assert_contains(job_text, spec.source_topic, "Main Flink job file contains source topic.", result)
             self._assert_contains(job_text, spec.sink_topic, "Main Flink job file contains sink topic.", result)
+
+    def _check_family_function_file(
+        self,
+        output_dir: Path,
+        spec: FlinkJobSpec,
+        result: ReviewResult,
+    ) -> None:
+        """Check that the expected family-specific function file exists."""
+        functions_dir = (
+            output_dir / "src" / "main" / "java" / "com"
+            / "example" / "functions"
+        )
+        if spec.job_family == JOB_FAMILY_WINDOWED_AGGREGATION:
+            expected_name = "WindowedCountProcessWindowFunction.java"
+        else:
+            expected_name = "RuleProcessFunction.java"
+        function_file = functions_dir / expected_name
+        if function_file.exists():
+            result.passed_checks.append(
+                "Family-specific function file exists."
+            )
+        else:
+            result.failed_checks.append(
+                f"Family-specific function file is missing: "
+                f"{function_file}"
+            )
+
+    def _check_job_family_in_readme(
+        self,
+        expected_paths: dict[str, Path],
+        spec: FlinkJobSpec,
+        result: ReviewResult,
+    ) -> None:
+        """Check that the job family value appears in the generated README."""
+        readme_path = expected_paths["README"]
+        if readme_path.exists():
+            readme_text = readme_path.read_text(encoding="utf-8")
+            self._assert_contains(
+                readme_text,
+                spec.job_family,
+                "README contains job family.",
+                result,
+            )
 
     def _check_optional_test_scaffold(
         self,

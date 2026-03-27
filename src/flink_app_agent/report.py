@@ -33,6 +33,7 @@ class GenerationReport:
     """Serializable report for one local generation run."""
 
     request_text: str
+    job_family: str
     parsed_spec_summary: dict[str, Any]
     selected_template: str
     output_directory: str
@@ -54,6 +55,7 @@ class GenerationReport:
         """Build a deterministic report from one generation run."""
         return cls(
             request_text=request_text,
+            job_family=spec.job_family,
             parsed_spec_summary=spec.model_dump(),
             selected_template=selected_template,
             output_directory=str(output_directory),

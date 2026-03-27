@@ -13,12 +13,12 @@ The repository is intentionally small. It is meant to make one path from request
 Current scope is deliberately narrow:
 
 - one CLI entry point
-- one strict spec model
-- one deterministic extractor
-- two registered real templates
-- one local generator
-- one deterministic review step with narrow repairs
-- one JSON report artifact
+- one strict spec model with explicit job family support
+- one deterministic extractor recognizing two job families
+- two registered real templates (keyed temporal rule and windowed aggregation)
+- one local generator with family-aware placeholder rendering
+- one deterministic review step with family-specific checks and narrow repairs
+- one JSON report artifact with job family metadata
 
 The project does not try to infer many job families, manage infrastructure, or hide the generation process behind a larger service.
 
@@ -124,6 +124,7 @@ For that request, the current extractor produces a spec like:
 
 ```json
 {
+  "job_family": "keyed_temporal_rule",
   "job_name": "bedout-job",
   "source_topic": "sensor-events",
   "sink_topic": "inferred-events",
@@ -142,6 +143,7 @@ Typical CLI summary:
 ```text
 Parsed spec summary:
 {
+  "job_family": "keyed_temporal_rule",
   "job_name": "bedout-job",
   "source_topic": "sensor-events",
   "sink_topic": "inferred-events",
@@ -154,11 +156,12 @@ Parsed spec summary:
   "time_window_minutes": 20
 }
 
+Job family: keyed_temporal_rule
 Chosen template: flink_kafka_rule_job
 Generation target: out
 Generated files count: 7
 Generation report: out\generation_report.json
-Structural review summary: passed, 8 passed, 0 failed, 0 warnings, 0 repairs
+Structural review summary: passed, 10 passed, 0 failed, 0 warnings, 0 repairs
 ```
 
 Example generated project shape:
@@ -187,11 +190,12 @@ Current limitations are explicit:
 - no web service or database
 - no Java compile or runtime verification
 - no Docker or deployment workflow
-- only two narrow template families
+- only two job families (keyed temporal rule and windowed aggregation)
 - only two supported rule types
 - request parsing is still deterministic and pattern-based
 - repairs are intentionally limited to safe text cleanup only
 - some fields are filled through fixed defaults rather than user-controlled extraction
+- no joins, enrichment, or sessionization families yet
 
 ## Roadmap
 

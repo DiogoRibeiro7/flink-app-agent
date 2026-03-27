@@ -160,6 +160,7 @@ def print_template_summary(template: TemplateDefinition) -> None:
     """Print a concise summary of the resolved generation template."""
     print("Template info:")
     print(f"- Identifier: {template.template_id}")
+    print(f"- Job family: {template.job_family}")
     print(f"- Description: {template.description}")
     print(f"- Runtime: {template.runtime}")
     print(f"- Supported rule types: {', '.join(sorted(template.supported_rule_types))}")
@@ -175,6 +176,7 @@ def print_generation_summary(context: GenerationContext) -> None:
     if context.report_path is None:
         raise ValueError("Generation context does not contain a report path.")
 
+    print(f"Job family: {context.spec.job_family}")
     print(f"Chosen template: {context.template.template_id}")
     print(f"Generation target: {context.output_dir}")
     print(f"Generated files count: {len(context.generated_files)}")

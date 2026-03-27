@@ -45,6 +45,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
         (
             "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
             {
+                "job_family": "keyed_temporal_rule",
                 "job_name": "bedout-job",
                 "source_topic": "sensor-events",
                 "sink_topic": "inferred-events",
@@ -60,6 +61,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
         (
             "Consume sensor-events from Kafka, key by user_id, emit BED_OUT events within 20 minutes",
             {
+                "job_family": "keyed_temporal_rule",
                 "job_name": "bedout-job",
                 "source_topic": "sensor-events",
                 "sink_topic": "inferred-events",
@@ -75,6 +77,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
         (
             "Build a Flink job reading sensor-events, keying by user_id, and writing BED_OUT within 20 minutes",
             {
+                "job_family": "keyed_temporal_rule",
                 "job_name": "bedout-job",
                 "source_topic": "sensor-events",
                 "sink_topic": "inferred-events",
@@ -90,6 +93,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
         (
             "Read topic sensor-events, group by user_id, emit BED_OUT within 20 minutes",
             {
+                "job_family": "keyed_temporal_rule",
                 "job_name": "bedout-job",
                 "source_topic": "sensor-events",
                 "sink_topic": "inferred-events",
@@ -105,6 +109,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
         (
             "Read from Kafka device-events, keyed by device_id, emit TEMP_SPIKE within 15 minutes",
             {
+                "job_family": "keyed_temporal_rule",
                 "job_name": "tempspike-job",
                 "source_topic": "device-events",
                 "sink_topic": "inferred-events",
@@ -118,8 +123,25 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
             },
         ),
         (
+            "Stream from Kafka sensor-events, partition by user_id, emit BED_OUT within 20 minutes",
+            {
+                "job_family": "keyed_temporal_rule",
+                "job_name": "bedout-job",
+                "source_topic": "sensor-events",
+                "sink_topic": "inferred-events",
+                "key_by": "user_id",
+                "event_time_field": "ts",
+                "input_event_name": "InputEvent",
+                "output_event_name": "BedOut",
+                "rule_type": "two_events_within_window",
+                "rule_condition": "emit BedOut when two keyed events match within 20 minutes",
+                "time_window_minutes": 20,
+            },
+        ),
+        (
             "Read from Kafka sensor-events, key by device_id, count events within 5 minutes",
             {
+                "job_family": "windowed_aggregation",
                 "job_name": "sensor-events-count-job",
                 "source_topic": "sensor-events",
                 "sink_topic": "aggregated-events",
@@ -135,6 +157,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
         (
             "Build a Flink job reading sensor-events, group by device_id, aggregate count every 10 minutes",
             {
+                "job_family": "windowed_aggregation",
                 "job_name": "sensor-events-count-job",
                 "source_topic": "sensor-events",
                 "sink_topic": "aggregated-events",
@@ -145,6 +168,22 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
                 "rule_type": "count_by_key_window",
                 "rule_condition": "count events by device_id within 10 minutes",
                 "time_window_minutes": 10,
+            },
+        ),
+        (
+            "Listen to Kafka device-events, partition by device_id, count events within 15 minutes",
+            {
+                "job_family": "windowed_aggregation",
+                "job_name": "device-events-count-job",
+                "source_topic": "device-events",
+                "sink_topic": "aggregated-events",
+                "key_by": "device_id",
+                "event_time_field": "ts",
+                "input_event_name": "InputEvent",
+                "output_event_name": "DeviceEventsCount",
+                "rule_type": "count_by_key_window",
+                "rule_condition": "count events by device_id within 15 minutes",
+                "time_window_minutes": 15,
             },
         ),
     ],

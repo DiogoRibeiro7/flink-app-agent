@@ -1,4 +1,4 @@
-"""Strict internal specification model for the current local generation flow."""
+"""Strict internal specification model for the multi-family local generation flow."""
 
 from __future__ import annotations
 
@@ -13,16 +13,24 @@ IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ALLOWED_RULE_TYPE = "two_events_within_window"
 WINDOWED_AGGREGATION_RULE_TYPE = "count_by_key_window"
 
+JOB_FAMILY_KEYED_RULE = "keyed_temporal_rule"
+JOB_FAMILY_WINDOWED_AGGREGATION = "windowed_aggregation"
+
 
 class FlinkJobSpec(BaseModel):
-    """Validated internal specification for the current narrow Flink job flow."""
+    """Validated internal specification for the current multi-family Flink job flow."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     supported_rule_types: ClassVar[set[str]] = {
         ALLOWED_RULE_TYPE,
         WINDOWED_AGGREGATION_RULE_TYPE,
     }
+    supported_job_families: ClassVar[set[str]] = {
+        JOB_FAMILY_KEYED_RULE,
+        JOB_FAMILY_WINDOWED_AGGREGATION,
+    }
 
+    job_family: str = Field(description="High-level job family for template selection.")
     job_name: str = Field(description="Filesystem-safe name for the generated job.")
     source_topic: str = Field(description="Kafka source topic name.")
     sink_topic: str = Field(description="Kafka sink topic name.")
@@ -81,6 +89,17 @@ class FlinkJobSpec(BaseModel):
             raise ValueError(f"{info.field_name} must not be empty.")
         return normalized
 
+    @field_validator("job_family")
+    @classmethod
+    def validate_job_family(cls, value: str) -> str:
+        """Allow only the currently supported job families."""
+        if value not in cls.supported_job_families:
+            supported = ", ".join(sorted(cls.supported_job_families))
+            raise ValueError(
+                f"job_family must be one of: {supported}."
+            )
+        return value
+
     @field_validator("rule_type")
     @classmethod
     def validate_rule_type(cls, value: str) -> str:
@@ -101,6 +120,7 @@ class FlinkJobSpec(BaseModel):
     def demo(cls) -> "FlinkJobSpec":
         """Return a small demo spec for tests and examples."""
         return cls(
+            job_family=JOB_FAMILY_KEYED_RULE,
             job_name="fraud-alert-job",
             source_topic="payments",
             sink_topic="alerts",
@@ -117,6 +137,7 @@ class FlinkJobSpec(BaseModel):
     def demo_windowed_aggregation(cls) -> "FlinkJobSpec":
         """Return a small windowed aggregation demo spec for tests and examples."""
         return cls(
+            job_family=JOB_FAMILY_WINDOWED_AGGREGATION,
             job_name="sensor-events-count-job",
             source_topic="sensor-events",
             sink_topic="aggregated-events",
@@ -132,6 +153,7 @@ class FlinkJobSpec(BaseModel):
     def to_template_dict(self) -> dict[str, str]:
         """Return a flat placeholder dictionary for template substitution."""
         return {
+            "JOB_FAMILY": self.job_family,
             "JOB_NAME": self.job_name,
             "SOURCE_TOPIC": self.source_topic,
             "SINK_TOPIC": self.sink_topic,

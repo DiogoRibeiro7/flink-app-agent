@@ -58,6 +58,7 @@ def test_valid_request_fixtures_cover_full_local_generation_flow(
     )
     report_path = output_dir / REPORT_FILENAME
 
+    assert context.spec.job_family == expected["job_family"]
     assert context.spec.source_topic == expected["source_topic"]
     assert context.spec.sink_topic == expected["sink_topic"]
     assert context.spec.output_event_name == expected["output_event_name"]

@@ -20,6 +20,8 @@ Current checks include:
 - no unresolved placeholders remain in generated text files
 - configured source topic appears in key generated files
 - configured sink topic appears in key generated files
+- family-specific function file exists (e.g. `RuleProcessFunction.java` for keyed rule, `WindowedCountProcessWindowFunction.java` for windowed aggregation)
+- job family value appears in generated README
 
 It may also record a warning if the generated Java test scaffold is missing.
 
@@ -40,6 +42,7 @@ During the normal CLI flow, the repository also allows a very small repair step 
 The report captures:
 
 - original request text
+- job family
 - parsed spec summary
 - selected template identifier
 - output directory

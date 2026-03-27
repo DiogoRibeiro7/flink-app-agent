@@ -98,7 +98,7 @@ def _create_template(template_dir: Path) -> Path:
     (template_dir / "assets").mkdir(parents=True)
 
     (template_dir / "README.md").write_text(
-        "# {{JOB_NAME}}\nsource={{SOURCE_TOPIC}}\nsink={{SINK_TOPIC}}\n",
+        "# {{JOB_NAME}}\nfamily={{JOB_FAMILY}}\nsource={{SOURCE_TOPIC}}\nsink={{SINK_TOPIC}}\n",
         encoding="utf-8",
     )
     (template_dir / "pom.xml").write_text("<artifactId>{{JOB_NAME}}</artifactId>\n", encoding="utf-8")
