@@ -31,6 +31,7 @@ def test_main_generates_project_and_prints_summary(
 
     assert exit_code == 0
     assert "Parsed spec summary:" in captured.out
+    assert "Extractor used: deterministic" in captured.out
     assert "Job family: keyed_temporal_rule" in captured.out
     assert "Chosen template: flink_kafka_rule_job" in captured.out
     assert f"Generation target: {output_dir}" in captured.out

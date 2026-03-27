@@ -410,14 +410,14 @@ def test_provider_output_with_invalid_spec_fails_validation() -> None:
         extractor.extract_spec("any request")
 
 
-def test_provider_output_with_missing_fields_fails_validation() -> None:
-    """Provider output missing required fields should fail validation."""
+def test_provider_output_with_missing_fields_fails_at_normalization() -> None:
+    """Provider output missing required fields should fail during normalization."""
     def mock_provider(request: str, prompt: str) -> str:
         return json.dumps({"job_name": "test-job"})
 
     extractor = build_provider_spec_extractor(mock_provider)
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ProviderExtractionError, match="missing required fields"):
         extractor.extract_spec("any request")
 
 

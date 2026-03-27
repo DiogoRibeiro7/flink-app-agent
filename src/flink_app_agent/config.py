@@ -20,9 +20,12 @@ from .llm import ProviderCallable
 
 EXTRACTOR_ENV_VAR = "FLINK_AGENT_EXTRACTOR"
 PROVIDER_ENTRY_POINT_ENV_VAR = "FLINK_AGENT_PROVIDER_ENTRY_POINT"
+FALLBACK_ENV_VAR = "FLINK_AGENT_FALLBACK"
 
 VALID_EXTRACTOR_MODES = ("deterministic", "provider")
+VALID_FALLBACK_POLICIES = ("fail", "deterministic")
 DEFAULT_EXTRACTOR_MODE = "deterministic"
+DEFAULT_FALLBACK_POLICY = "fail"
 
 
 class ConfigurationError(ValueError):
@@ -34,16 +37,29 @@ class ExtractorConfig:
     """Resolved extraction configuration."""
 
     mode: str
+    fallback: str = DEFAULT_FALLBACK_POLICY
     call_provider: ProviderCallable | None = None
+
+
+@dataclass(frozen=True)
+class ExtractionOutcome:
+    """Record of which extractor produced the spec and whether fallback occurred."""
+
+    extractor_used: str
+    fallback_triggered: bool = False
+    fallback_reason: str | None = None
 
 
 def resolve_extractor_config(
     cli_extractor: str | None = None,
+    cli_fallback: str | None = None,
 ) -> ExtractorConfig:
     """Resolve the effective extractor configuration.
 
     Args:
         cli_extractor: Explicit mode from the CLI ``--extractor`` flag.
+            Takes precedence over environment variables when not None.
+        cli_fallback: Explicit fallback policy from the CLI ``--fallback`` flag.
             Takes precedence over environment variables when not None.
 
     Returns:
@@ -54,10 +70,12 @@ def resolve_extractor_config(
             is missing or broken.
     """
     mode = _resolve_mode(cli_extractor)
+    fallback = _resolve_fallback(cli_fallback)
     if mode == "deterministic":
-        return ExtractorConfig(mode=mode)
+        return ExtractorConfig(mode=mode, fallback=fallback)
     return ExtractorConfig(
         mode=mode,
+        fallback=fallback,
         call_provider=_load_provider_callable(),
     )
 
@@ -75,6 +93,21 @@ def _resolve_mode(cli_extractor: str | None) -> str:
             f"Must be one of: {', '.join(VALID_EXTRACTOR_MODES)}."
         )
     return mode
+
+
+def _resolve_fallback(cli_fallback: str | None) -> str:
+    """Determine the effective fallback policy."""
+    if cli_fallback is not None:
+        policy = cli_fallback
+    else:
+        policy = os.environ.get(FALLBACK_ENV_VAR, DEFAULT_FALLBACK_POLICY)
+
+    if policy not in VALID_FALLBACK_POLICIES:
+        raise ConfigurationError(
+            f"Invalid fallback policy '{policy}'. "
+            f"Must be one of: {', '.join(VALID_FALLBACK_POLICIES)}."
+        )
+    return policy
 
 
 def _load_provider_callable() -> ProviderCallable:

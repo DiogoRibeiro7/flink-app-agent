@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from .constants import ProviderExtractionError
+from .provider_normalizer import normalize_provider_payload
 from .spec import (
     ALLOWED_RULE_TYPE,
     FlinkJobSpec,
@@ -291,10 +293,6 @@ class DeterministicSpecPayloadExtractor:
         raise SpecParsingError(error_message)
 
 
-class ProviderExtractionError(ValueError):
-    """Raised when a provider-backed extraction call fails or returns invalid output."""
-
-
 # Type alias for the injectable provider callable.
 # Signature: (request_text, prompt_text) -> JSON string containing spec payload.
 ProviderCallable = Callable[[str, str], str]
@@ -307,14 +305,14 @@ class ProviderSpecPayloadExtractor:
     The ``call_provider`` callable receives the preprocessed request and the
     extraction prompt, and must return a JSON string whose keys match the
     ``FlinkJobSpec`` fields. All provider-specific concerns (API keys, HTTP,
-    SDK usage) live inside that callable — this class only handles JSON
-    parsing and error wrapping.
+    SDK usage) live inside that callable — this class handles JSON parsing,
+    structured output normalization, and error wrapping.
     """
 
     call_provider: ProviderCallable
 
     def extract_payload(self, request: str, prompt: str) -> dict[str, Any]:
-        """Call the provider and parse the JSON response into a raw payload."""
+        """Call the provider, parse JSON, normalize, and return a clean payload."""
         try:
             raw_response = self.call_provider(request, prompt)
         except Exception as exc:
@@ -333,7 +331,8 @@ class ProviderSpecPayloadExtractor:
             raise ProviderExtractionError(
                 f"Provider returned {type(payload).__name__}, expected a JSON object."
             )
-        return payload
+
+        return normalize_provider_payload(payload)
 
 
 @dataclass(frozen=True)

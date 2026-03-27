@@ -7,12 +7,16 @@ import json
 import sys
 from pathlib import Path
 
-from .config import ConfigurationError, ExtractorConfig, resolve_extractor_config
-from .constants import GENERATION_REPORT_FILENAME
+from .config import (
+    ConfigurationError,
+    ExtractionOutcome,
+    ExtractorConfig,
+    resolve_extractor_config,
+)
+from .constants import GENERATION_REPORT_FILENAME, ProviderExtractionError
 from .generation_context import GenerationContext
 from .generator import ProjectGenerator
 from .llm import (
-    ProviderExtractionError,
     SpecParsingError,
     build_default_spec_extractor,
     build_provider_spec_extractor,
@@ -60,6 +64,16 @@ def build_parser() -> argparse.ArgumentParser:
         default="deterministic",
         help="Extraction strategy: 'deterministic' (default) or 'provider'.",
     )
+    parser.add_argument(
+        "--fallback",
+        choices=["fail", "deterministic"],
+        default=None,
+        help=(
+            "Fallback policy when provider extraction fails: "
+            "'fail' (default, abort on error) or "
+            "'deterministic' (fall back to deterministic extractor)."
+        ),
+    )
     return parser
 
 
@@ -78,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         output_dir = Path(args.output) if args.output is not None else Path(".")
         extractor_config = resolve_extractor_config(
             cli_extractor=args.extractor,
+            cli_fallback=args.fallback,
         )
         context = build_generation_context(
             args.request, output_dir, extractor_config=extractor_config,
@@ -107,18 +122,41 @@ def main(argv: list[str] | None = None) -> int:
 def parse_request(
     request: str,
     extractor_config: ExtractorConfig | None = None,
-) -> FlinkJobSpec:
-    """Parse a natural-language request into a validated ``FlinkJobSpec``."""
+) -> tuple[FlinkJobSpec, ExtractionOutcome]:
+    """Parse a natural-language request into a validated ``FlinkJobSpec``.
+
+    Returns a tuple of (spec, outcome) so the caller always knows which
+    extractor produced the result and whether fallback was triggered.
+    """
     config = extractor_config or resolve_extractor_config()
-    if config.mode == "provider":
-        if config.call_provider is None:
-            raise ConfigurationError(
-                "Provider mode is selected but no call_provider callable was resolved."
-            )
+
+    if config.mode != "provider":
+        spec = build_default_spec_extractor().extract_spec(request)
+        return spec, ExtractionOutcome(extractor_used="deterministic")
+
+    if config.call_provider is None:
+        raise ConfigurationError(
+            "Provider mode is selected but no call_provider callable was resolved."
+        )
+
+    try:
         extractor = build_provider_spec_extractor(config.call_provider)
-    else:
-        extractor = build_default_spec_extractor()
-    return extractor.extract_spec(request)
+        spec = extractor.extract_spec(request)
+        return spec, ExtractionOutcome(extractor_used="provider")
+    except (ProviderExtractionError, Exception) as exc:
+        if config.fallback != "deterministic":
+            raise
+        reason = f"{type(exc).__name__}: {exc}"
+        print(
+            f"Provider extraction failed, falling back to deterministic: {reason}",
+            file=sys.stderr,
+        )
+        spec = build_default_spec_extractor().extract_spec(request)
+        return spec, ExtractionOutcome(
+            extractor_used="deterministic",
+            fallback_triggered=True,
+            fallback_reason=reason,
+        )
 
 
 def should_print_template_info(args: argparse.Namespace) -> bool:
@@ -132,7 +170,7 @@ def build_generation_context(
     extractor_config: ExtractorConfig | None = None,
 ) -> GenerationContext:
     """Build the small shared context used across the generation pipeline."""
-    spec = parse_request(
+    spec, extraction_outcome = parse_request(
         request_text,
         extractor_config=extractor_config,
     )
@@ -142,6 +180,7 @@ def build_generation_context(
         output_dir=output_dir,
         spec=spec,
         template=template,
+        extraction_outcome=extraction_outcome,
     )
 
 
@@ -237,6 +276,10 @@ def print_generation_summary(context: GenerationContext) -> None:
     if context.report_path is None:
         raise ValueError("Generation context does not contain a report path.")
 
+    outcome = context.extraction_outcome
+    print(f"Extractor used: {outcome.extractor_used}")
+    if outcome.fallback_triggered:
+        print(f"Fallback triggered: {outcome.fallback_reason}")
     print(f"Job family: {context.spec.job_family}")
     print(f"Chosen template: {context.template.template_id}")
     print(f"Generation target: {context.output_dir}")

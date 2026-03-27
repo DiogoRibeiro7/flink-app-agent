@@ -26,7 +26,8 @@ import re
 from dataclasses import dataclass
 from typing import Protocol
 
-from .llm import ProviderCallable, ProviderExtractionError
+from .constants import ProviderExtractionError
+from .llm import ProviderCallable
 
 
 @dataclass(frozen=True)

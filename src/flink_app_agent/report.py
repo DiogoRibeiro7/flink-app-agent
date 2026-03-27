@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from .config import ExtractionOutcome
 from .constants import GENERATION_REPORT_FILENAME
 from .generation_context import GenerationContext
 from .repair import RepairResult
@@ -16,6 +17,15 @@ from .verification import VerificationResult
 
 
 REPORT_FILENAME = GENERATION_REPORT_FILENAME
+
+
+@dataclass(frozen=True)
+class ExtractionOutcomeReport:
+    """Serializable extraction provenance summary."""
+
+    extractor_used: str
+    fallback_triggered: bool
+    fallback_reason: str | None
 
 
 @dataclass(frozen=True)
@@ -59,6 +69,7 @@ class GenerationReport:
     output_directory: str
     generated_files_count: int
     generated_files: list[str]
+    extraction_outcome: ExtractionOutcomeReport
     pipeline_status: str
     repair_pass: RepairPassReport
     structural_check: StructuralCheckReport
@@ -73,11 +84,18 @@ class GenerationReport:
         selected_template: str,
         output_directory: Path,
         generated_files: list[Path],
+        extraction_outcome: ExtractionOutcome | None,
         repair_result: RepairResult | None,
         review_result: ReviewResult,
         verification_result: VerificationResult | None,
     ) -> "GenerationReport":
         """Build a deterministic report from one generation run."""
+        eo = extraction_outcome or ExtractionOutcome(extractor_used="deterministic")
+        extraction_report = ExtractionOutcomeReport(
+            extractor_used=eo.extractor_used,
+            fallback_triggered=eo.fallback_triggered,
+            fallback_reason=eo.fallback_reason,
+        )
         rr = repair_result or RepairResult()
         repair_report = RepairPassReport(
             repairs=list(rr.repairs),
@@ -110,6 +128,7 @@ class GenerationReport:
             output_directory=str(output_directory),
             generated_files_count=len(generated_files),
             generated_files=[str(path) for path in generated_files],
+            extraction_outcome=extraction_report,
             pipeline_status=pipeline_status,
             repair_pass=repair_report,
             structural_check=structural_report,
@@ -133,6 +152,7 @@ class GenerationReport:
             selected_template=context.template.template_id,
             output_directory=context.output_dir,
             generated_files=context.generated_files,
+            extraction_outcome=context.extraction_outcome,
             repair_result=context.repair_result,
             review_result=context.review_result,
             verification_result=context.verification_result,

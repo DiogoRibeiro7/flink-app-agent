@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .config import ExtractionOutcome
 from .repair import RepairResult
 from .review import ReviewResult
 from .spec import FlinkJobSpec
@@ -20,6 +21,9 @@ class GenerationContext:
     output_dir: Path
     spec: FlinkJobSpec
     template: TemplateDefinition
+    extraction_outcome: ExtractionOutcome = field(
+        default_factory=lambda: ExtractionOutcome(extractor_used="deterministic"),
+    )
     generated_files: list[Path] = field(default_factory=list)
     repair_result: RepairResult | None = None
     review_result: ReviewResult | None = None
