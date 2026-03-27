@@ -1,0 +1,93 @@
+{
+  "successful_requests": [
+    {
+      "name": "deterministic_sensor_bedout_success",
+      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+      "extractor": "deterministic",
+      "fallback": "fail",
+      "provider_case": null,
+      "expected": {
+        "template_id": "flink_kafka_rule_job",
+        "job_family": "keyed_temporal_rule",
+        "source_topic": "sensor-events",
+        "sink_topic": "inferred-events",
+        "output_event_name": "BedOut",
+        "extraction_outcome": {
+          "selected_mode": "deterministic",
+          "fallback_policy": "fail",
+          "actual_path": [
+            "deterministic"
+          ],
+          "fallback_occurred": false,
+          "warnings": [],
+          "errors": []
+        }
+      }
+    },
+    {
+      "name": "provider_windowed_aggregation_success",
+      "request": "this request is ignored by the mocked provider",
+      "extractor": "provider",
+      "fallback": "fail",
+      "provider_case": "windowed_aggregation_success",
+      "expected": {
+        "template_id": "flink_windowed_aggregation_job",
+        "job_family": "windowed_aggregation",
+        "source_topic": "sensor-events",
+        "sink_topic": "aggregated-events",
+        "output_event_name": "SensorEventsCount",
+        "extraction_outcome": {
+          "selected_mode": "provider",
+          "fallback_policy": "fail",
+          "actual_path": [
+            "provider"
+          ],
+          "fallback_occurred": false,
+          "provider_status": "available",
+          "warnings": [],
+          "errors": []
+        }
+      }
+    },
+    {
+      "name": "provider_invalid_output_with_deterministic_fallback",
+      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+      "extractor": "provider",
+      "fallback": "deterministic",
+      "provider_case": "invalid_json",
+      "expected": {
+        "template_id": "flink_kafka_rule_job",
+        "job_family": "keyed_temporal_rule",
+        "source_topic": "sensor-events",
+        "sink_topic": "inferred-events",
+        "output_event_name": "BedOut",
+        "extraction_outcome": {
+          "selected_mode": "provider",
+          "fallback_policy": "deterministic",
+          "actual_path": [
+            "provider",
+            "deterministic"
+          ],
+          "fallback_occurred": true,
+          "provider_status": "unavailable",
+          "warnings": [
+            "Provider extraction failed; deterministic fallback was used."
+          ],
+          "errors": [
+            "ProviderExtractionError: Provider returned invalid JSON: Expecting value: line 1 column 1 (char 0)"
+          ]
+        }
+      }
+    }
+  ],
+  "failing_requests": [
+    {
+      "name": "provider_invalid_output_without_fallback",
+      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+      "extractor": "provider",
+      "fallback": "fail",
+      "provider_case": "invalid_json",
+      "expected_error": "Provider returned invalid JSON"
+    }
+  ]
+}

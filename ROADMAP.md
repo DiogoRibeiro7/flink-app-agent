@@ -1,89 +1,79 @@
 # Roadmap
 
-This roadmap reflects the repository after the current `v0.5` changes. It is intentionally conservative. The project is still a small local tool, and future work should keep that shape unless there is a clear reason to broaden it.
+This roadmap reflects the repository after the current `v0.6` changes. It stays aligned with the constrained-tool vision: a small local generator with explicit extraction boundaries, strict validation, limited template scope, and machine-readable reporting.
 
-## v0.3
+## Current v0.6
 
-`v0.3` provided:
+`v0.6` is the current baseline.
 
-- deterministic request extraction with explicit extraction-layer boundaries
-- strict spec validation and normalization
-- explicit template registry and template selection
-- two real local Flink templates
-- local project generation with placeholder rendering safeguards
-- deterministic post-generation review
-- machine-readable generation report output
-- a simple CLI with small inspection modes
-- fixture-based and end-to-end local tests
+The repository now provides:
 
-## v0.4
+- deterministic extraction as the default path
+- optional provider-backed extraction behind the existing extraction interface
+- strict provider normalization before the shared `FlinkJobSpec` validation path
+- configurable provider fallback to deterministic extraction
+- extraction provenance in both CLI summaries and `generation_report.json`
+- two supported job families with explicit template resolution
+- deterministic project generation from local templates
+- deterministic repair, structural review, and optional compile-only verification
+- fixture-driven and end-to-end coverage for deterministic, provider, and fallback extraction paths
+- documentation that treats provider-backed extraction as optional and bounded, not autonomous
 
-`v0.4` extends the repository from a single-family tool into a small multi-family generator:
+What `v0.6` does not claim:
 
-- explicit `job_family` field on the spec model (`keyed_temporal_rule`, `windowed_aggregation`)
-- deterministic extractor recognizes and distinguishes both families
-- two real template families with family-aware rendering
-- template registry resolves by both `job_family` and `rule_type`
-- `{{JOB_FAMILY}}` placeholder in generated project READMEs
-- family-specific review checks (function file existence, job family in README)
-- generation report includes `job_family`
-- CLI summaries show job family
-- broader deterministic extraction patterns (`stream from kafka`, `listen to kafka`, `partition by`)
-- richer fixture-based end-to-end tests covering both families
-- updated documentation across all docs
-
-## Current v0.5
-
-`v0.5` adds a repair loop and optional compile verification to make the pipeline more trustworthy:
-
-- standalone `repair.py` module with a deterministic multi-pass repair loop
-- repair strategies: trailing placeholder removal, missing final newline, trailing whitespace
-- standalone `verification.py` module for optional `mvn compile` verification
-- refined staged pipeline: generate → repair → review → verify (optional) → report
-- `--verify` CLI flag for opt-in compile verification
-- generation report now includes `pipeline_status`, `repair_pass`, and `compile_verification`
-- review module simplified to pure structural checks (repair logic extracted)
-- fixed missing `WindowedCountProcessWindowFunction` import in windowed aggregation template
-- new test modules: `test_repair.py` (5 tests), `test_verification.py` (3 tests)
-- 70 total tests, all deterministic and local
-
-## Likely v0.6
-
-The next likely version should focus on:
-
-- richer compile verification feedback (structured error extraction)
-- broader deterministic extraction patterns
-- stronger review checks for content consistency per family
-- optional generated-project test execution
-
-Non-goals for `v0.6`:
-
-- many template families
+- a built-in real provider integration
 - broad natural-language understanding
-- hosted services
-- full autonomous repair
+- many template families
+- autonomous repair or autonomous design
+- production deployment workflows
+
+## Likely v0.7
+
+The next likely version should strengthen the current constrained pipeline rather than broaden it dramatically.
+
+Most likely themes:
+
+- richer ambiguity handling for requests that are close to supported patterns but still underspecified
+- stronger deterministic repairs that remain safe, local, and auditable
+- slightly broader aggregation support within the existing multi-family approach
+- improved compile-time verification feedback and failure summaries
+- stronger consistency checks between extracted spec, rendered files, and report output
+
+Possible `v0.7` additions if they stay small and well-bounded:
+
+- one more carefully chosen template family later, only if it fits the existing spec/template model
+- better negative tests for ambiguous extraction and partial provider failures
+- tighter report checks for artifact completeness and provenance consistency
+
+Non-goals for `v0.7`:
+
+- many template families at once
+- broad LLM-style planning or free-form generation
+- hosted services, telemetry, or remote reporting
+- provider-specific logic leaking into generation or review
+- repair logic that mutates generated projects beyond narrow deterministic fixups
 
 ## v1.0 Target
 
-`v1.0` should represent a stable small internal tool rather than a broad platform.
+`v1.0` should represent a stable small internal tool, not a broad platform.
 
 The `v1.0` target is:
 
-- stable template families with clear compatibility rules
-- provider-backed extraction available as an optional path behind the existing interface
-- stronger artifact validation after generation
-- more complete generated scaffolds for the supported templates
-- predictable CLI and report outputs suitable for local automation
+- stable multi-family generation with clear compatibility rules
+- optional provider-backed extraction retained under strict normalization and validation
+- generation artifacts that are more consistently verified before being presented as successful
+- stronger trust and provenance guarantees in CLI output and report artifacts
+- predictable local behavior suitable for scripting and repeatable internal use
 
 Likely `v1.0` characteristics:
 
-- two or a few template families, not many
-- deterministic stub path retained for tests and local development
-- optional real provider path that does not leak provider details across the codebase
-- stronger review plus optional compile-oriented verification for generated artifacts
-- generated templates that still stay small, but are more coherent and practical than the current starter scaffolds
+- a small number of carefully maintained template families
+- deterministic extraction kept as the default and as the baseline test path
+- provider-backed extraction available as an optional front-end, not a separate product mode
+- repair, review, verification, and reporting working together as one explicit quality boundary
+- generated artifacts that are still starter scaffolds, but with fewer avoidable inconsistencies
 
-`v1.0` is not meant to imply a fully autonomous agent or production deployment system. It is a stability milestone for the constrained-tool vision.
+`v1.0` is not meant to imply autonomous software generation, production readiness for every Flink use case, or large-scale provider orchestration. It is a stability milestone for a narrow tool.
 
 ## Later Optional Directions
 
@@ -91,24 +81,26 @@ These directions are plausible later, but they are not current commitments.
 
 ### Optional provider work
 
-- support one real extraction provider behind the existing extraction interfaces
-- improve prompt versioning and prompt testing
+- support one real provider integration behind the current adapter boundary
+- improve prompt versioning and prompt regression testing
+- add more explicit provider failure categorization where it materially improves debugging
 
 ### Optional verification work
 
-- optional Maven compile checks for generated projects
-- optional generated-project test execution
-- stricter artifact completeness checks per template
+- optional generated-project test execution in addition to compile-only verification
+- stronger compile-time error summarization in reports
+- stricter artifact completeness checks per template family
 
 ### Optional template growth
 
-- one or two additional focused template families
+- one or two more focused template families, added slowly
 - richer template metadata and compatibility constraints
+- slightly broader aggregation variants if they remain compatible with the small spec model
 
 ### Optional packaging and delivery work
 
-- better generated project packaging guidance
-- optional deployment helpers for generated projects
+- better guidance for packaging the generated starter projects
+- small local helpers around project handoff or packaging steps
 
 ## Out Of Scope For Now
 
@@ -118,15 +110,14 @@ The following are still not near-term priorities:
 - web APIs
 - database-backed state
 - broad workflow orchestration
-- many templates at once
 - unconstrained natural-language generation
+- many templates at once
 - infrastructure-heavy deployment systems
+- claims of autonomy or general intelligence
 
 ## Compact Stage Summary
 
-- `v0.3`: stable narrow local pipeline with two real templates, deterministic review, and generation reporting
-- `v0.4`: explicit multi-family support, family-aware extraction/registry/review/report, broader patterns, richer tests
-- `v0.5`: repair loop, optional compile verification, refined staged pipeline, template compile fixes
-- `v0.6`: richer verification feedback, broader extraction, content consistency checks
-- `v1.0`: stabilize a small set of templates, keep provider-backed extraction optional, and improve artifact-level guarantees
-- later: optional provider, verification, and packaging improvements if the constrained tool remains maintainable
+- `v0.6`: optional provider-backed extraction, deterministic fallback, extraction provenance, repair/review/verification/report pipeline, and full local test coverage across extraction paths
+- `v0.7`: better ambiguity handling, stronger deterministic repairs, slightly broader aggregation support, improved compile feedback, and possibly one more carefully chosen template family
+- `v1.0`: stable multi-family generation, optional provider-backed extraction under strict validation, verified artifacts, and stronger trust/provenance guarantees
+- later: selective provider, verification, template, and packaging improvements if they preserve the constrained-tool shape
