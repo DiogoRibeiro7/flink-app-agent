@@ -10,7 +10,13 @@ from pathlib import Path
 from .constants import GENERATION_REPORT_FILENAME
 from .generation_context import GenerationContext
 from .generator import ProjectGenerator
-from .llm import SpecParsingError, build_default_spec_extractor
+from .llm import (
+    ProviderCallable,
+    ProviderExtractionError,
+    SpecParsingError,
+    build_default_spec_extractor,
+    build_provider_spec_extractor,
+)
 from .repair import DeterministicRepairer, RepairResult
 from .report import GenerationReport, write_generation_report
 from .review import ReviewResult, StructuralReviewer
@@ -48,6 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run optional Maven compile verification on the generated project.",
     )
+    parser.add_argument(
+        "--extractor",
+        choices=["deterministic", "provider"],
+        default="deterministic",
+        help="Extraction strategy: 'deterministic' (default) or 'provider'.",
+    )
     return parser
 
 
@@ -64,7 +76,9 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         output_dir = Path(args.output) if args.output is not None else Path(".")
-        context = build_generation_context(args.request, output_dir)
+        context = build_generation_context(
+            args.request, output_dir, extractor_type=args.extractor,
+        )
 
         print_parsed_spec_summary(context.spec)
         if should_print_template_info(args):
@@ -79,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
         if context.review_result is not None and not context.review_result.success:
             return 1
         return 0
-    except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, ValueError) as exc:
+    except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, ProviderExtractionError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:
@@ -87,9 +101,21 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
-def parse_request(request: str) -> FlinkJobSpec:
+def parse_request(
+    request: str,
+    extractor_type: str = "deterministic",
+    call_provider: ProviderCallable | None = None,
+) -> FlinkJobSpec:
     """Parse a natural-language request into a validated ``FlinkJobSpec``."""
-    extractor = build_default_spec_extractor()
+    if extractor_type == "provider":
+        if call_provider is None:
+            raise ValueError(
+                "Provider extractor requires a call_provider callable. "
+                "Set FLINK_APP_AGENT_PROVIDER or pass call_provider explicitly."
+            )
+        extractor = build_provider_spec_extractor(call_provider)
+    else:
+        extractor = build_default_spec_extractor()
     return extractor.extract_spec(request)
 
 
@@ -98,9 +124,18 @@ def should_print_template_info(args: argparse.Namespace) -> bool:
     return args.print_template_info
 
 
-def build_generation_context(request_text: str, output_dir: Path) -> GenerationContext:
+def build_generation_context(
+    request_text: str,
+    output_dir: Path,
+    extractor_type: str = "deterministic",
+    call_provider: ProviderCallable | None = None,
+) -> GenerationContext:
     """Build the small shared context used across the generation pipeline."""
-    spec = parse_request(request_text)
+    spec = parse_request(
+        request_text,
+        extractor_type=extractor_type,
+        call_provider=call_provider,
+    )
     template = resolve_template(spec)
     return GenerationContext(
         request_text=request_text,

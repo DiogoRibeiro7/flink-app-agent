@@ -1,11 +1,12 @@
-"""Extraction layer boundaries and deterministic implementations for v0.4."""
+"""Extraction layer boundaries with deterministic and provider-backed implementations."""
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from .spec import (
     ALLOWED_RULE_TYPE,
@@ -290,19 +291,49 @@ class DeterministicSpecPayloadExtractor:
         raise SpecParsingError(error_message)
 
 
-@dataclass(frozen=True)
-class OpenAISpecPayloadExtractor:
-    """Placeholder skeleton for a future model-backed payload extractor."""
+class ProviderExtractionError(ValueError):
+    """Raised when a provider-backed extraction call fails or returns invalid output."""
 
-    model_name: str = "gpt-placeholder"
+
+# Type alias for the injectable provider callable.
+# Signature: (request_text, prompt_text) -> JSON string containing spec payload.
+ProviderCallable = Callable[[str, str], str]
+
+
+@dataclass(frozen=True)
+class ProviderSpecPayloadExtractor:
+    """Provider-backed payload extractor that delegates to an injectable callable.
+
+    The ``call_provider`` callable receives the preprocessed request and the
+    extraction prompt, and must return a JSON string whose keys match the
+    ``FlinkJobSpec`` fields. All provider-specific concerns (API keys, HTTP,
+    SDK usage) live inside that callable — this class only handles JSON
+    parsing and error wrapping.
+    """
+
+    call_provider: ProviderCallable
 
     def extract_payload(self, request: str, prompt: str) -> dict[str, Any]:
-        """Raise until a real provider-backed implementation is added."""
-        del request
-        del prompt
-        raise NotImplementedError(
-            "Real model-backed extraction is not implemented yet. Replace this skeleton with a provider call later."
-        )
+        """Call the provider and parse the JSON response into a raw payload."""
+        try:
+            raw_response = self.call_provider(request, prompt)
+        except Exception as exc:
+            raise ProviderExtractionError(
+                f"Provider call failed: {exc}"
+            ) from exc
+
+        try:
+            payload = json.loads(raw_response)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise ProviderExtractionError(
+                f"Provider returned invalid JSON: {exc}"
+            ) from exc
+
+        if not isinstance(payload, dict):
+            raise ProviderExtractionError(
+                f"Provider returned {type(payload).__name__}, expected a JSON object."
+            )
+        return payload
 
 
 @dataclass(frozen=True)
@@ -341,6 +372,33 @@ def build_default_extraction_service() -> SpecExtractionService:
     )
 
 
+def build_provider_extraction_service(
+    call_provider: ProviderCallable,
+) -> SpecExtractionService:
+    """Build a provider-backed extraction service pipeline.
+
+    The ``call_provider`` callable handles all provider-specific concerns.
+    Preprocessing, prompt loading, and validation are still handled by the
+    same shared components used by the deterministic path.
+    """
+    return SpecExtractionService(
+        preprocessor=SimpleRequestPreprocessor(),
+        prompt_repository=FilePromptRepository(),
+        payload_extractor=ProviderSpecPayloadExtractor(
+            call_provider=call_provider,
+        ),
+        validator=PydanticSpecValidator(),
+    )
+
+
 def build_default_spec_extractor() -> SpecExtractor:
     """Return the default deterministic extractor used by the current CLI."""
     return StubSpecExtractor()
+
+
+def build_provider_spec_extractor(
+    call_provider: ProviderCallable,
+) -> SpecExtractor:
+    """Return a provider-backed extractor that validates through the same pipeline."""
+    service = build_provider_extraction_service(call_provider)
+    return ServiceBackedSpecExtractor(extraction_service=service)
