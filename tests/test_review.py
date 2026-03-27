@@ -32,7 +32,6 @@ def test_structural_review_passes_for_generated_project(tmp_path: Path) -> None:
     assert "Main Flink job file exists." in result.passed_checks
     assert "README contains source topic." in result.passed_checks
     assert "Main Flink job file contains sink topic." in result.passed_checks
-    assert result.repairs == []
 
 
 def test_structural_review_fails_when_main_job_file_is_missing(tmp_path: Path) -> None:
@@ -78,11 +77,11 @@ def test_structural_review_warns_when_test_scaffold_is_missing(tmp_path: Path) -
     assert any("Generated test scaffold is missing" in item for item in result.warnings)
 
 
-def test_structural_review_repairs_trailing_placeholder_only_lines(tmp_path: Path) -> None:
-    """A trailing placeholder-only line should be removed when repairs are enabled."""
+def test_structural_review_fails_with_unresolved_placeholders(tmp_path: Path) -> None:
+    """Unresolved placeholders should fail the structural review."""
     template_dir = Path(__file__).resolve().parents[1] / "templates" / "flink_kafka_rule_job"
     spec = FlinkJobSpec.demo()
-    output_dir = tmp_path / "generated-repair"
+    output_dir = tmp_path / "generated-unresolved"
     readme_path = output_dir / "README.md"
 
     ProjectGenerator(template_dir=template_dir).generate(spec=spec, output_dir=output_dir)
@@ -92,12 +91,10 @@ def test_structural_review_repairs_trailing_placeholder_only_lines(tmp_path: Pat
         encoding="utf-8",
     )
 
-    result = StructuralReviewer().review(output_dir, spec, attempt_repairs=True)
+    result = StructuralReviewer().review(output_dir, spec)
 
-    assert result.success is True
-    assert result.repairs
-    assert any("Removed trailing placeholder-only lines" in item for item in result.repairs)
-    assert "{{TRAILING_PLACEHOLDER}}" not in readme_path.read_text(encoding="utf-8")
+    assert result.success is False
+    assert any("Unresolved placeholders" in item for item in result.failed_checks)
 
 
 def test_structural_review_passes_for_windowed_aggregation_project(tmp_path: Path) -> None:

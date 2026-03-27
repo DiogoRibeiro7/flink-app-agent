@@ -1,5 +1,6 @@
 package com.example;
 
+import com.example.functions.WindowedCountProcessWindowFunction;
 import com.example.model.{{INPUT_EVENT_NAME}};
 import com.example.model.{{OUTPUT_EVENT_NAME}};
 import java.time.Duration;

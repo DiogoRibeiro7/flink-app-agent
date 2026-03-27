@@ -1,6 +1,21 @@
-# Review And Report
+# Repair, Review, Verification, And Report
 
-The repository includes a deterministic post-generation review and a machine-readable report artifact.
+The repository includes a deterministic repair loop, structural review, optional compile verification, and a machine-readable report artifact.
+
+## Repair
+
+`src/flink_app_agent/repair.py` defines:
+
+- `RepairResult`
+- `DeterministicRepairer`
+
+The repair loop runs before the structural review. It applies a small set of safe, auditable fixes:
+
+- trailing placeholder-only line removal
+- missing final newline addition
+- trailing whitespace cleanup
+
+The loop runs at most 3 passes and stops early when no new repairs are found. All repairs are recorded and reported.
 
 ## Review
 
@@ -25,15 +40,23 @@ Current checks include:
 
 It may also record a warning if the generated Java test scaffold is missing.
 
-During the normal CLI flow, the repository also allows a very small repair step for safe cases only. Today that repair step removes trailing placeholder-only lines from generated text files when the intent is unambiguous.
-
 `ReviewResult` records:
 
 - `passed_checks`
 - `failed_checks`
 - `warnings`
-- `repairs`
 - `overall_status`
+
+## Compile Verification
+
+`src/flink_app_agent/verification.py` defines:
+
+- `VerificationResult`
+- `CompileVerifier`
+
+Compile verification is opt-in via the `--verify` CLI flag. It runs `mvn compile` on the generated project and captures the result. It does not run tests, package, or deploy.
+
+If Maven is not available on PATH, verification is skipped gracefully with a clear reason.
 
 ## Generation Report
 
@@ -48,17 +71,27 @@ The report captures:
 - output directory
 - generated file count
 - generated file list
+- overall pipeline status
+- repair pass summary (repairs applied, passes run)
 - structural check summary
+- compile verification summary (if attempted)
 - warnings
 
-## Why Both Exist
+## Pipeline Status
 
-The terminal output is aimed at a developer running the CLI directly.
+The `pipeline_status` field in the report summarizes the overall outcome:
 
-The JSON report is aimed at:
+- `passed` — review passed, verification passed (or not attempted)
+- `passed_with_warnings` — review passed with warnings, no verification
+- `failed` — review failed
+- `review_passed_compile_failed` — review passed but compile verification failed
 
-- quick inspection after a run
-- scripting around generated projects
-- preserving the exact result of one generation pass without scraping terminal output
+## Why All Four Exist
 
-Neither the review nor the report proves that the generated Flink project is correct at runtime. They only summarize deterministic structural checks on local output.
+The repair loop fixes obvious safe issues before the review checks structure.
+
+The review checks that the generated project is structurally complete.
+
+The compile verification optionally proves the generated Java compiles.
+
+The JSON report preserves the full pipeline state for scripting and automation.

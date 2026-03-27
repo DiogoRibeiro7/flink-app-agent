@@ -25,7 +25,6 @@ class ReviewResult:
     passed_checks: list[str] = field(default_factory=list)
     failed_checks: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-    repairs: list[str] = field(default_factory=list)
     overall_status: str = "passed"
 
     @property
@@ -54,7 +53,6 @@ class StructuralReviewer:
         self,
         output_dir: Path,
         spec: FlinkJobSpec,
-        attempt_repairs: bool = False,
     ) -> ReviewResult:
         """Review the generated project for obvious structural issues."""
         result = ReviewResult()
@@ -77,9 +75,6 @@ class StructuralReviewer:
                 result.failed_checks.append(f"{label} is missing: {path}")
 
         unresolved_files = self._find_unresolved_placeholder_files(output_dir)
-        if unresolved_files and attempt_repairs:
-            result.repairs.extend(self._repair_trailing_placeholder_lines(unresolved_files))
-            unresolved_files = self._find_unresolved_placeholder_files(output_dir)
         if unresolved_files:
             unresolved_text = ", ".join(str(path) for path in unresolved_files)
             result.failed_checks.append(
@@ -128,24 +123,6 @@ class StructuralReviewer:
             for path in output_dir.rglob("*")
             if path.is_file() and path.suffix in self.text_extensions
         )
-
-    def _repair_trailing_placeholder_lines(self, paths: list[Path]) -> list[str]:
-        """Repair files with placeholder-only trailing lines when safe to do so."""
-        repairs: list[str] = []
-        for path in paths:
-            text = path.read_text(encoding="utf-8")
-            lines = text.splitlines()
-            trimmed_lines = list(lines)
-            while trimmed_lines and PLACEHOLDER_PATTERN.fullmatch(trimmed_lines[-1].strip()):
-                trimmed_lines.pop()
-            if len(trimmed_lines) == len(lines):
-                continue
-            repaired_text = "\n".join(trimmed_lines)
-            if text.endswith("\n") and repaired_text:
-                repaired_text += "\n"
-            path.write_text(repaired_text, encoding="utf-8")
-            repairs.append(f"Removed trailing placeholder-only lines from {path}")
-        return repairs
 
     def _check_expected_topics(
         self,

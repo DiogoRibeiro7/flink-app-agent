@@ -4,7 +4,7 @@
 
 1. a validated internal spec
 2. a generated Flink Java project from a small local template set
-3. a deterministic structural review, a limited repair pass for safe cases, and a JSON generation report
+3. a deterministic repair loop, structural review, optional compile verification, and a JSON generation report
 
 The repository is intentionally small. It is meant to make one path from request text to generated project explicit and testable, not to cover broad Flink design space or open-ended code generation.
 
@@ -17,8 +17,10 @@ Current scope is deliberately narrow:
 - one deterministic extractor recognizing two job families
 - two registered real templates (keyed temporal rule and windowed aggregation)
 - one local generator with family-aware placeholder rendering
-- one deterministic review step with family-specific checks and narrow repairs
-- one JSON report artifact with job family metadata
+- one deterministic repair loop for safe fixups (trailing placeholders, whitespace, newlines)
+- one deterministic review step with family-specific structural checks
+- one optional compile-only verification step (requires Maven)
+- one JSON report artifact with pipeline status, repair pass, and verification results
 
 The project does not try to infer many job families, manage infrastructure, or hide the generation process behind a larger service.
 
@@ -31,10 +33,11 @@ The current pipeline is:
 3. `spec.py` validates and normalizes the resulting `FlinkJobSpec`
 4. `template_registry.py` resolves the local template for the spec
 5. `generator.py` copies the template, renders placeholders in safe text files, and returns generated paths
-6. `review.py` runs lightweight file-based checks on the generated project
-7. `review.py` may apply a small safe repair when the fix is unambiguous
-8. `report.py` writes `generation_report.json`
-9. `main.py` prints a concise summary
+6. `repair.py` runs a deterministic repair loop for safe fixups
+7. `review.py` runs lightweight file-based structural checks on the generated project
+8. `verification.py` optionally runs `mvn compile` on the generated project (with `--verify`)
+9. `report.py` writes `generation_report.json` with full pipeline status
+10. `main.py` prints a concise summary
 
 Deeper implementation notes live in:
 
@@ -62,9 +65,11 @@ flink-app-agent/
 │       ├── generator.py
 │       ├── llm.py
 │       ├── main.py
+│       ├── repair.py
 │       ├── report.py
 │       ├── review.py
 │       ├── spec.py
+│       ├── verification.py
 │       ├── template_registry.py
 │       ├── utils.py
 │       └── prompts/
@@ -90,6 +95,15 @@ Run the default generation flow:
 poetry run flink-app-agent \
   --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
   --output ./out
+```
+
+Run with optional compile verification (requires Maven on PATH):
+
+```bash
+poetry run flink-app-agent \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --output ./out \
+  --verify
 ```
 
 Useful inspection-only modes:
@@ -161,7 +175,8 @@ Chosen template: flink_kafka_rule_job
 Generation target: out
 Generated files count: 7
 Generation report: out\generation_report.json
-Structural review summary: passed, 10 passed, 0 failed, 0 warnings, 0 repairs
+Repair pass: 1 passes, 0 repairs
+Structural review summary: passed, 10 passed, 0 failed, 0 warnings
 ```
 
 Example generated project shape:
@@ -188,12 +203,13 @@ Current limitations are explicit:
 
 - no external LLM or API calls
 - no web service or database
-- no Java compile or runtime verification
+- no Flink runtime execution
 - no Docker or deployment workflow
+- compile verification is opt-in and requires Maven on PATH
 - only two job families (keyed temporal rule and windowed aggregation)
 - only two supported rule types
 - request parsing is still deterministic and pattern-based
-- repairs are intentionally limited to safe text cleanup only
+- repairs are intentionally limited to safe text cleanup only (no model-based patching)
 - some fields are filled through fixed defaults rather than user-controlled extraction
 - no joins, enrichment, or sessionization families yet
 

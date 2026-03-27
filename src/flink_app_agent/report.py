@@ -9,11 +9,32 @@ from typing import Any
 
 from .constants import GENERATION_REPORT_FILENAME
 from .generation_context import GenerationContext
+from .repair import RepairResult
 from .review import ReviewResult
 from .spec import FlinkJobSpec
+from .verification import VerificationResult
 
 
 REPORT_FILENAME = GENERATION_REPORT_FILENAME
+
+
+@dataclass(frozen=True)
+class RepairPassReport:
+    """Serializable repair pass summary."""
+
+    repairs: list[str]
+    passes_run: int
+    any_repairs: bool
+
+
+@dataclass(frozen=True)
+class CompileVerificationReport:
+    """Serializable compile verification summary."""
+
+    overall_status: str
+    attempted: bool
+    success: bool
+    skipped_reason: str | None
 
 
 @dataclass(frozen=True)
@@ -25,7 +46,6 @@ class StructuralCheckReport:
     passed_checks: list[str]
     failed_checks: list[str]
     warnings: list[str]
-    repairs: list[str]
 
 
 @dataclass(frozen=True)
@@ -39,7 +59,10 @@ class GenerationReport:
     output_directory: str
     generated_files_count: int
     generated_files: list[str]
+    pipeline_status: str
+    repair_pass: RepairPassReport
     structural_check: StructuralCheckReport
+    compile_verification: CompileVerificationReport | None
     warnings: list[str]
 
     @classmethod
@@ -50,9 +73,35 @@ class GenerationReport:
         selected_template: str,
         output_directory: Path,
         generated_files: list[Path],
+        repair_result: RepairResult | None,
         review_result: ReviewResult,
+        verification_result: VerificationResult | None,
     ) -> "GenerationReport":
         """Build a deterministic report from one generation run."""
+        rr = repair_result or RepairResult()
+        repair_report = RepairPassReport(
+            repairs=list(rr.repairs),
+            passes_run=rr.passes_run,
+            any_repairs=rr.any_repairs,
+        )
+        structural_report = StructuralCheckReport(
+            overall_status=review_result.overall_status,
+            success=review_result.success,
+            passed_checks=list(review_result.passed_checks),
+            failed_checks=list(review_result.failed_checks),
+            warnings=list(review_result.warnings),
+        )
+        compile_report: CompileVerificationReport | None = None
+        if verification_result is not None:
+            compile_report = CompileVerificationReport(
+                overall_status=verification_result.overall_status,
+                attempted=verification_result.attempted,
+                success=verification_result.success,
+                skipped_reason=verification_result.skipped_reason,
+            )
+        pipeline_status = _compute_pipeline_status(
+            review_result, verification_result,
+        )
         return cls(
             request_text=request_text,
             job_family=spec.job_family,
@@ -61,14 +110,10 @@ class GenerationReport:
             output_directory=str(output_directory),
             generated_files_count=len(generated_files),
             generated_files=[str(path) for path in generated_files],
-            structural_check=StructuralCheckReport(
-                overall_status=review_result.overall_status,
-                success=review_result.success,
-                passed_checks=list(review_result.passed_checks),
-                failed_checks=list(review_result.failed_checks),
-                warnings=list(review_result.warnings),
-                repairs=list(review_result.repairs),
-            ),
+            pipeline_status=pipeline_status,
+            repair_pass=repair_report,
+            structural_check=structural_report,
+            compile_verification=compile_report,
             warnings=list(review_result.warnings),
         )
 
@@ -88,8 +133,26 @@ class GenerationReport:
             selected_template=context.template.template_id,
             output_directory=context.output_dir,
             generated_files=context.generated_files,
+            repair_result=context.repair_result,
             review_result=context.review_result,
+            verification_result=context.verification_result,
         )
+
+
+def _compute_pipeline_status(
+    review_result: ReviewResult,
+    verification_result: VerificationResult | None,
+) -> str:
+    """Derive the overall pipeline status from review and verification."""
+    if not review_result.success:
+        return "failed"
+    if verification_result is not None and verification_result.attempted:
+        if not verification_result.success:
+            return "review_passed_compile_failed"
+        return "passed"
+    if review_result.warnings:
+        return "passed_with_warnings"
+    return "passed"
 
 
 def write_generation_report(output_dir: Path, report: GenerationReport) -> Path:
