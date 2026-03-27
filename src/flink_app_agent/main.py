@@ -299,9 +299,11 @@ def print_generation_summary(context: GenerationContext) -> None:
         raise ValueError("Generation context does not contain a report path.")
 
     outcome = context.extraction_outcome
-    print(f"Extractor used: {outcome.extractor_used}")
-    if outcome.fallback_triggered:
-        print(f"Fallback triggered: {outcome.fallback_reason}")
+    print(f"Requested extractor: {outcome.requested_mode}")
+    print(f"Extraction path: {_format_extraction_path(outcome.actual_path, outcome.extractor_used)}")
+    print(f"Fallback occurred: {_format_bool(outcome.fallback_triggered)}")
+    if outcome.fallback_triggered and outcome.fallback_reason is not None:
+        print(f"Fallback reason: {outcome.fallback_reason}")
     print(f"Job family: {context.spec.job_family}")
     print(f"Chosen template: {context.template.template_id}")
     print(f"Generation target: {context.output_dir}")
@@ -345,6 +347,17 @@ def print_generation_summary(context: GenerationContext) -> None:
             if verification_result.stderr:
                 stderr_preview = verification_result.stderr[:500]
                 print(f"  Stderr: {stderr_preview}")
+
+
+def _format_extraction_path(actual_path: tuple[str, ...], extractor_used: str) -> str:
+    """Render the extraction path as a short stable arrow-separated string."""
+    path = actual_path or (extractor_used,)
+    return " -> ".join(path)
+
+
+def _format_bool(value: bool) -> str:
+    """Render booleans in a short scripting-friendly form."""
+    return "yes" if value else "no"
 
 
 if __name__ == "__main__":
