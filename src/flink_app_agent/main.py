@@ -132,7 +132,11 @@ def parse_request(
 
     if config.mode != "provider":
         spec = build_default_spec_extractor().extract_spec(request)
-        return spec, ExtractionOutcome(extractor_used="deterministic")
+        return spec, ExtractionOutcome(
+            requested_mode=config.mode,
+            fallback_policy=config.fallback,
+            extractor_used="deterministic",
+        )
 
     if config.call_provider is None:
         raise ConfigurationError(
@@ -142,20 +146,29 @@ def parse_request(
     try:
         extractor = build_provider_spec_extractor(config.call_provider)
         spec = extractor.extract_spec(request)
-        return spec, ExtractionOutcome(extractor_used="provider")
+        return spec, ExtractionOutcome(
+            requested_mode="provider",
+            fallback_policy=config.fallback,
+            extractor_used="provider",
+        )
     except (ProviderExtractionError, Exception) as exc:
         if config.fallback != "deterministic":
             raise
-        reason = f"{type(exc).__name__}: {exc}"
+        error_type = type(exc).__name__
+        error_message = str(exc)
         print(
-            f"Provider extraction failed, falling back to deterministic: {reason}",
+            f"Provider extraction failed, falling back to deterministic: "
+            f"{error_type}: {error_message}",
             file=sys.stderr,
         )
         spec = build_default_spec_extractor().extract_spec(request)
         return spec, ExtractionOutcome(
+            requested_mode="provider",
+            fallback_policy="deterministic",
             extractor_used="deterministic",
             fallback_triggered=True,
-            fallback_reason=reason,
+            fallback_reason=f"{error_type}: {error_message}",
+            provider_error=error_message,
         )
 
 

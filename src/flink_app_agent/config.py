@@ -45,9 +45,12 @@ class ExtractorConfig:
 class ExtractionOutcome:
     """Record of which extractor produced the spec and whether fallback occurred."""
 
+    requested_mode: str
+    fallback_policy: str
     extractor_used: str
     fallback_triggered: bool = False
     fallback_reason: str | None = None
+    provider_error: str | None = None
 
 
 def resolve_extractor_config(

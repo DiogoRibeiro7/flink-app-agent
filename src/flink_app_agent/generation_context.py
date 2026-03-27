@@ -22,7 +22,11 @@ class GenerationContext:
     spec: FlinkJobSpec
     template: TemplateDefinition
     extraction_outcome: ExtractionOutcome = field(
-        default_factory=lambda: ExtractionOutcome(extractor_used="deterministic"),
+        default_factory=lambda: ExtractionOutcome(
+            requested_mode="deterministic",
+            fallback_policy="fail",
+            extractor_used="deterministic",
+        ),
     )
     generated_files: list[Path] = field(default_factory=list)
     repair_result: RepairResult | None = None

@@ -62,8 +62,12 @@ def test_generation_report_file_is_created_with_key_fields(tmp_path: Path) -> No
     assert payload["generated_files_count"] == len(generated_files)
     assert any(path.endswith("README.md") for path in payload["generated_files"])
     assert payload["structural_check"]["success"] is True
+    assert payload["extraction_outcome"]["requested_mode"] == "deterministic"
+    assert payload["extraction_outcome"]["fallback_policy"] == "fail"
     assert payload["extraction_outcome"]["extractor_used"] == "deterministic"
     assert payload["extraction_outcome"]["fallback_triggered"] is False
+    assert payload["extraction_outcome"]["fallback_reason"] is None
+    assert payload["extraction_outcome"]["provider_error"] is None
     assert payload["pipeline_status"] == "passed"
     assert payload["repair_pass"]["passes_run"] == 0
     assert payload["compile_verification"] is None

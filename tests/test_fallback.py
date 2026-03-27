@@ -55,9 +55,11 @@ def test_provider_success_returns_provider_outcome() -> None:
     spec, outcome = parse_request("any request", extractor_config=config)
 
     assert spec.job_name == "fraud-alert-job"
+    assert outcome.requested_mode == "provider"
     assert outcome.extractor_used == "provider"
     assert outcome.fallback_triggered is False
     assert outcome.fallback_reason is None
+    assert outcome.provider_error is None
 
 
 # --- Provider failure with fallback=fail ---
@@ -104,9 +106,12 @@ def test_provider_failure_with_deterministic_fallback_succeeds() -> None:
     )
 
     assert spec.source_topic == "payments"
+    assert outcome.requested_mode == "provider"
+    assert outcome.fallback_policy == "deterministic"
     assert outcome.extractor_used == "deterministic"
     assert outcome.fallback_triggered is True
     assert "provider unreachable" in outcome.fallback_reason
+    assert "provider unreachable" in outcome.provider_error
 
 
 def test_provider_bad_json_with_deterministic_fallback_succeeds() -> None:
@@ -124,6 +129,7 @@ def test_provider_bad_json_with_deterministic_fallback_succeeds() -> None:
     assert outcome.extractor_used == "deterministic"
     assert outcome.fallback_triggered is True
     assert "invalid JSON" in outcome.fallback_reason
+    assert outcome.provider_error is not None
 
 
 # --- Deterministic mode (no fallback needed) ---
@@ -139,6 +145,7 @@ def test_deterministic_mode_returns_deterministic_outcome() -> None:
     )
 
     assert spec.source_topic == "payments"
+    assert outcome.requested_mode == "deterministic"
     assert outcome.extractor_used == "deterministic"
     assert outcome.fallback_triggered is False
 

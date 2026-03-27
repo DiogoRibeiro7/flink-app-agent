@@ -23,9 +23,12 @@ REPORT_FILENAME = GENERATION_REPORT_FILENAME
 class ExtractionOutcomeReport:
     """Serializable extraction provenance summary."""
 
+    requested_mode: str
+    fallback_policy: str
     extractor_used: str
     fallback_triggered: bool
     fallback_reason: str | None
+    provider_error: str | None
 
 
 @dataclass(frozen=True)
@@ -90,11 +93,18 @@ class GenerationReport:
         verification_result: VerificationResult | None,
     ) -> "GenerationReport":
         """Build a deterministic report from one generation run."""
-        eo = extraction_outcome or ExtractionOutcome(extractor_used="deterministic")
+        eo = extraction_outcome or ExtractionOutcome(
+            requested_mode="deterministic",
+            fallback_policy="fail",
+            extractor_used="deterministic",
+        )
         extraction_report = ExtractionOutcomeReport(
+            requested_mode=eo.requested_mode,
+            fallback_policy=eo.fallback_policy,
             extractor_used=eo.extractor_used,
             fallback_triggered=eo.fallback_triggered,
             fallback_reason=eo.fallback_reason,
+            provider_error=eo.provider_error,
         )
         rr = repair_result or RepairResult()
         repair_report = RepairPassReport(
