@@ -2,7 +2,7 @@
   "successful_requests": [
     {
       "name": "deterministic_sensor_bedout_success",
-      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
       "extractor": "deterministic",
       "fallback": "fail",
       "provider_case": null,
@@ -51,7 +51,7 @@
     },
     {
       "name": "provider_invalid_output_with_deterministic_fallback",
-      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
       "extractor": "provider",
       "fallback": "deterministic",
       "provider_case": "invalid_json",
@@ -83,7 +83,7 @@
   "failing_requests": [
     {
       "name": "provider_invalid_output_without_fallback",
-      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
       "extractor": "provider",
       "fallback": "fail",
       "provider_case": "invalid_json",

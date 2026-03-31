@@ -1,9 +1,8 @@
 """Structured output normalization for provider-backed extraction.
 
 This module sits between the raw provider JSON and the strict spec
-validation. It enforces a narrow expected shape, normalizes common
-provider variations, and rejects output that cannot be safely mapped
-to the internal spec model.
+validation. It normalizes common provider variations and rejects output
+that cannot be safely mapped to the internal spec model.
 
 The normalization layer is intentionally separate from ``spec.py``
 validation. Spec validation enforces the final contract (field formats,
@@ -32,7 +31,7 @@ from .spec import (
     WINDOWED_AGGREGATION_RULE_TYPE,
 )
 
-REQUIRED_FIELDS: frozenset[str] = frozenset({
+KNOWN_FIELDS: frozenset[str] = frozenset({
     "job_family",
     "job_name",
     "source_topic",
@@ -84,18 +83,15 @@ def normalize_provider_payload(raw: dict[str, Any]) -> dict[str, Any]:
     Steps:
     1. Map aliased field names to canonical names
     2. Strip fields not in the required set
-    3. Check all required fields are present
-    4. Coerce types (string numbers to int)
-    5. Validate family/rule_type coherence
+    3. Coerce types (string numbers to int)
+    4. Validate family/rule_type coherence when enough information exists
 
     Raises:
-        ProviderExtractionError: If the payload is missing required fields,
-            has incoherent family/rule_type, or has values that cannot be
-            coerced.
+        ProviderExtractionError: If the payload has incoherent family/rule_type
+            values or values that cannot be coerced safely.
     """
     mapped = _apply_aliases(raw)
     filtered = _strip_unknown_fields(mapped)
-    _check_required_fields(filtered)
     coerced = _coerce_types(filtered)
     _check_family_rule_coherence(coerced)
     return coerced
@@ -112,18 +108,8 @@ def _apply_aliases(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def _strip_unknown_fields(payload: dict[str, Any]) -> dict[str, Any]:
-    """Remove keys that are not in the required field set."""
-    return {k: v for k, v in payload.items() if k in REQUIRED_FIELDS}
-
-
-def _check_required_fields(payload: dict[str, Any]) -> None:
-    """Raise if any required fields are missing."""
-    missing = REQUIRED_FIELDS - payload.keys()
-    if missing:
-        missing_list = ", ".join(sorted(missing))
-        raise ProviderExtractionError(
-            f"Provider output is missing required fields: {missing_list}"
-        )
+    """Remove keys that are not in the known field set."""
+    return {k: v for k, v in payload.items() if k in KNOWN_FIELDS}
 
 
 def _coerce_types(payload: dict[str, Any]) -> dict[str, Any]:

@@ -25,7 +25,7 @@ def test_main_generates_project_and_prints_summary(
     exit_code = main(
         [
             "--request",
-            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
             "--output",
             str(output_dir),
         ]
@@ -59,7 +59,7 @@ def test_main_generates_windowed_aggregation_project(tmp_path: Path, capsys) -> 
     exit_code = main(
         [
             "--request",
-            "Read from Kafka sensor-events, group by device_id, count events within 5 minutes",
+            "Read from Kafka sensor-events, group by device_id, count events within 5 minutes, write to Kafka aggregated-events",
             "--output",
             str(output_dir),
         ]
@@ -87,7 +87,7 @@ def test_main_print_spec_only_exits_before_generation(
     exit_code = main(
         [
             "--request",
-            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
             "--print-spec-only",
         ]
     )
@@ -106,7 +106,7 @@ def test_main_print_template_info_exits_before_generation(capsys) -> None:
     exit_code = main(
         [
             "--request",
-            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
             "--print-template-info",
         ]
     )
@@ -126,7 +126,7 @@ def test_main_requires_output_for_generation(capsys) -> None:
     exit_code = main(
         [
             "--request",
-            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
         ]
     )
 
@@ -227,7 +227,7 @@ def test_main_provider_fallback_prints_fallback_summary(
     exit_code = main(
         [
             "--request",
-            "Read from Kafka payments, key by account_id, emit Alert within 10 minutes",
+            "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts",
             "--output",
             str(output_dir),
             "--extractor",

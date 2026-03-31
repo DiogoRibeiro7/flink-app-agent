@@ -132,30 +132,32 @@ def test_extra_fields_are_stripped() -> None:
     assert result["job_name"] == "fraud-alert-job"
 
 
-# --- Missing required fields ---
+# --- Partial payloads preserved for ambiguity assessment ---
 
 
-def test_missing_single_field_fails() -> None:
-    """A payload missing one required field should fail clearly."""
+def test_missing_single_field_is_preserved_for_later_assessment() -> None:
+    """A payload missing one field should remain intact for later ambiguity checks."""
     raw = _valid_keyed_rule_payload()
     del raw["source_topic"]
 
-    with pytest.raises(ProviderExtractionError, match="source_topic"):
-        normalize_provider_payload(raw)
+    result = normalize_provider_payload(raw)
+
+    assert "source_topic" not in result
+    assert result["job_family"] == "keyed_temporal_rule"
 
 
-def test_missing_multiple_fields_fails() -> None:
-    """A payload missing multiple fields should list all missing."""
+def test_missing_multiple_fields_are_preserved_when_types_are_safe() -> None:
+    """A partial payload should still normalize aliases and known fields safely."""
     raw = {"job_name": "test-job"}
 
-    with pytest.raises(ProviderExtractionError, match="missing required fields"):
-        normalize_provider_payload(raw)
+    result = normalize_provider_payload(raw)
+
+    assert result == {"job_name": "test-job"}
 
 
-def test_empty_payload_fails() -> None:
-    """An empty payload should fail listing all required fields."""
-    with pytest.raises(ProviderExtractionError, match="missing required fields"):
-        normalize_provider_payload({})
+def test_empty_payload_stays_empty() -> None:
+    """An empty payload should pass through so ambiguity can be classified later."""
+    assert normalize_provider_payload({}) == {}
 
 
 # --- Type coercion ---
