@@ -10,7 +10,9 @@ from pathlib import Path
 from .ambiguity import AmbiguousRequestError
 from .ambiguity_policy import AmbiguityPolicy
 from .config import (
+    AmbiguityFinding,
     ConfigurationError,
+    DefaultInjection,
     ExtractionOutcome,
     ExtractorConfig,
     resolve_extractor_config,
@@ -234,6 +236,23 @@ def _extract_with_policy(
     issue_codes = tuple(item.issue.code for item in policy_result.classified_issues)
     warnings = extraction_outcome.warnings + policy_result.warnings
     ambiguity_warning = "; ".join(policy_result.warnings) if policy_result.warnings else None
+    ambiguity_findings = tuple(
+        AmbiguityFinding(
+            code=item.issue.code,
+            severity=item.severity,
+            message=item.issue.message,
+            fields=item.issue.fields,
+        )
+        for item in policy_result.classified_issues
+    )
+    default_injections = tuple(
+        DefaultInjection(
+            field=field,
+            value=value,
+            reason="safe default applied under the active ambiguity policy",
+        )
+        for field, value in sorted(policy_result.applied_defaults.items())
+    )
     return spec, ExtractionOutcome(
         requested_mode=extraction_outcome.requested_mode,
         fallback_policy=extraction_outcome.fallback_policy,
@@ -249,9 +268,27 @@ def _extract_with_policy(
         ambiguity_issue_codes=issue_codes,
         ambiguity_warning=ambiguity_warning,
         injected_defaults=tuple(sorted(policy_result.applied_defaults)),
+        ambiguity_findings=ambiguity_findings,
+        default_injections=default_injections,
+        interpretation_risk=_derive_interpretation_risk(
+            extraction_outcome=extraction_outcome,
+            policy_result_status=policy_result.status,
+        ),
         warnings=warnings,
         errors=extraction_outcome.errors,
     )
+
+
+def _derive_interpretation_risk(
+    extraction_outcome: ExtractionOutcome,
+    policy_result_status: str,
+) -> str:
+    """Return a compact trust/risk label for one extraction outcome."""
+    if extraction_outcome.fallback_triggered:
+        return "elevated"
+    if policy_result_status == "used_safe_defaults":
+        return "elevated"
+    return "low"
 
 
 def build_generation_context(

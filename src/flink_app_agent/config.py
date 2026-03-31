@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from .llm import ProviderCallable
 
@@ -61,8 +62,47 @@ class ExtractionOutcome:
     ambiguity_issue_codes: tuple[str, ...] = ()
     ambiguity_warning: str | None = None
     injected_defaults: tuple[str, ...] = ()
+    ambiguity_findings: tuple["AmbiguityFinding", ...] = ()
+    default_injections: tuple["DefaultInjection", ...] = ()
+    interpretation_risk: str = "low"
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AmbiguityFinding:
+    """Compact structured summary of one ambiguity finding."""
+
+    code: str
+    severity: str
+    message: str
+    fields: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable ambiguity finding."""
+        return {
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+            "fields": list(self.fields),
+        }
+
+
+@dataclass(frozen=True)
+class DefaultInjection:
+    """Structured record of one deterministic default applied by policy."""
+
+    field: str
+    value: Any
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable default-injection record."""
+        return {
+            "field": self.field,
+            "value": self.value,
+            "reason": self.reason,
+        }
 
 
 def resolve_extractor_config(
