@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import AmbiguityFinding, DefaultInjection, ExtractionOutcome
+from .config import (
+    AmbiguityFinding,
+    DefaultInjection,
+    ExtractionOutcome,
+    ProviderQualityFindingRecord,
+)
 from .constants import GENERATION_REPORT_FILENAME
 from .generation_context import GenerationContext
 from .repair import RepairResult
@@ -75,6 +80,35 @@ class DefaultInjectionReport:
 
 
 @dataclass(frozen=True)
+class ProviderQualityFindingReport:
+    """Serializable provider-quality finding for report output."""
+
+    code: str
+    message: str
+    fields: list[str]
+
+    @classmethod
+    def from_finding(
+        cls,
+        finding: ProviderQualityFindingRecord,
+    ) -> "ProviderQualityFindingReport":
+        """Build a report-friendly provider-quality finding."""
+        return cls(
+            code=finding.code,
+            message=finding.message,
+            fields=list(finding.fields),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable provider-quality finding."""
+        return {
+            "code": self.code,
+            "message": self.message,
+            "fields": list(self.fields),
+        }
+
+
+@dataclass(frozen=True)
 class InterpretationProvenanceReport:
     """Serializable interpretation trust/provenance summary."""
 
@@ -84,6 +118,9 @@ class InterpretationProvenanceReport:
     fallback_occurred: bool
     fallback_reason: str | None
     provider_status: str | None
+    provider_quality: str | None
+    provider_quality_summary: str | None
+    provider_quality_findings: list[ProviderQualityFindingReport]
     interpretation_risk: str
     ambiguity_status: str
     ambiguity_policy: str
@@ -113,6 +150,14 @@ class InterpretationProvenanceReport:
         }
         if self.provider_status is not None:
             payload["provider_status"] = self.provider_status
+        if self.provider_quality is not None:
+            payload["provider_quality"] = self.provider_quality
+        if self.provider_quality_summary is not None:
+            payload["provider_quality_summary"] = self.provider_quality_summary
+        if self.provider_quality is not None:
+            payload["provider_quality_findings"] = [
+                finding.to_dict() for finding in self.provider_quality_findings
+            ]
         if self.fallback_reason is not None:
             payload["fallback_reason"] = self.fallback_reason
         payload["warnings"] = list(self.warnings)
@@ -197,6 +242,12 @@ class GenerationReport:
             fallback_occurred=eo.fallback_triggered,
             fallback_reason=eo.fallback_reason,
             provider_status=eo.provider_status,
+            provider_quality=eo.provider_quality,
+            provider_quality_summary=eo.provider_quality_summary,
+            provider_quality_findings=[
+                ProviderQualityFindingReport.from_finding(finding)
+                for finding in eo.provider_quality_findings
+            ],
             interpretation_risk=eo.interpretation_risk,
             ambiguity_status=eo.ambiguity_status,
             ambiguity_policy=eo.ambiguity_policy,
@@ -273,6 +324,12 @@ class GenerationReport:
             fallback_occurred=extraction_outcome.fallback_triggered,
             fallback_reason=extraction_outcome.fallback_reason,
             provider_status=extraction_outcome.provider_status,
+            provider_quality=extraction_outcome.provider_quality,
+            provider_quality_summary=extraction_outcome.provider_quality_summary,
+            provider_quality_findings=[
+                ProviderQualityFindingReport.from_finding(finding)
+                for finding in extraction_outcome.provider_quality_findings
+            ],
             interpretation_risk=extraction_outcome.interpretation_risk,
             ambiguity_status=extraction_outcome.ambiguity_status,
             ambiguity_policy=extraction_outcome.ambiguity_policy,

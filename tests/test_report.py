@@ -9,7 +9,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from flink_app_agent.ambiguity import AmbiguityIssue, AmbiguityAssessment
-from flink_app_agent.config import AmbiguityFinding, DefaultInjection, ExtractionOutcome
+from flink_app_agent.config import (
+    AmbiguityFinding,
+    DefaultInjection,
+    ExtractionOutcome,
+    ProviderQualityFindingRecord,
+)
 from flink_app_agent.generation_context import GenerationContext
 from flink_app_agent.generator import ProjectGenerator
 from flink_app_agent.llm import build_default_spec_extractor
@@ -79,6 +84,7 @@ def test_generation_report_file_is_created_with_key_fields(tmp_path: Path) -> No
     assert payload["extraction_outcome"]["warnings"] == []
     assert payload["extraction_outcome"]["errors"] == []
     assert "provider_status" not in payload["extraction_outcome"]
+    assert "provider_quality" not in payload["extraction_outcome"]
     assert payload["pipeline_status"] == "passed"
     assert payload["failure_stage"] is None
     assert payload["failure_reason"] is None
@@ -178,12 +184,16 @@ def test_provider_backed_extraction_report_content() -> None:
         "actual_path": ["provider"],
         "fallback_occurred": False,
         "provider_status": "available",
+        "provider_quality": "acceptable",
+        "provider_quality_summary": "acceptable",
+        "provider_quality_findings": [],
         "interpretation_risk": "low",
         "ambiguity_status": "clear",
         "ambiguity_policy": "fail",
         "ambiguity_policy_result": "clear",
         "ambiguity_findings": [],
         "defaults_injected": [],
+        "provider_quality_findings": [],
         "warnings": [],
         "errors": [],
     }
@@ -224,6 +234,9 @@ def test_fallback_extraction_report_content() -> None:
     assert extraction_payload["fallback_occurred"] is True
     assert extraction_payload["fallback_reason"] == "ProviderExtractionError: Provider call failed: provider unreachable"
     assert extraction_payload["provider_status"] == "unavailable"
+    assert extraction_payload["provider_quality"] == "unusable"
+    assert extraction_payload["provider_quality_summary"] == "Provider call failed: provider unreachable"
+    assert extraction_payload["provider_quality_findings"] == []
     assert extraction_payload["interpretation_risk"] == "elevated"
     assert extraction_payload["ambiguity_status"] == "clear"
     assert extraction_payload["ambiguity_policy"] == "fail"
@@ -391,6 +404,7 @@ def test_report_content_can_combine_fallback_and_injected_defaults() -> None:
 
     assert extraction_payload["actual_path"] == ["provider", "deterministic"]
     assert extraction_payload["fallback_occurred"] is True
+    assert extraction_payload["provider_quality"] == "unusable"
     assert extraction_payload["defaults_injected"] == [
         {
             "field": "sink_topic",
@@ -401,4 +415,65 @@ def test_report_content_can_combine_fallback_and_injected_defaults() -> None:
     assert extraction_payload["warnings"] == [
         "Provider extraction failed; deterministic fallback was used.",
         "Applied safe default for sink_topic: inferred-events",
+    ]
+
+
+def test_provider_quality_details_appear_in_report() -> None:
+    """Provider quality details should be machine-readable when the provider path succeeds."""
+    extraction_outcome = ExtractionOutcome(
+        requested_mode="provider",
+        fallback_policy="fail",
+        extractor_used="provider",
+        actual_path=("provider",),
+        provider_status="available",
+        provider_quality="ambiguous",
+        provider_quality_summary="Provider output remains ambiguous after normalization: missing_sink_topic",
+        provider_quality_findings=(
+            ProviderQualityFindingRecord(
+                code="ambiguity_present",
+                message="Provider output remains ambiguous after normalization: missing_sink_topic",
+            ),
+        ),
+        ambiguity_status="minor",
+        ambiguity_policy="minor_defaults",
+        ambiguity_policy_result="used_safe_defaults",
+        ambiguity_findings=(
+            AmbiguityFinding(
+                code="missing_sink_topic",
+                severity="minor",
+                message="The request does not identify a sink topic.",
+                fields=("sink_topic",),
+            ),
+        ),
+        default_injections=(
+            DefaultInjection(
+                field="sink_topic",
+                value="inferred-events",
+                reason="safe default applied under the active ambiguity policy",
+            ),
+        ),
+        interpretation_risk="elevated",
+        warnings=("Applied safe default for sink_topic: inferred-events",),
+    )
+
+    report = GenerationReport.from_failure(
+        request_text="any request",
+        output_directory=Path("out"),
+        extraction_outcome=extraction_outcome,
+        failure_stage="extraction",
+        failure_reason="stopped for test coverage",
+    )
+
+    provenance = report.to_dict()["extraction_outcome"]
+
+    assert provenance["provider_quality"] == "ambiguous"
+    assert provenance["provider_quality_summary"] == (
+        "Provider output remains ambiguous after normalization: missing_sink_topic"
+    )
+    assert provenance["provider_quality_findings"] == [
+        {
+            "code": "ambiguity_present",
+            "message": "Provider output remains ambiguous after normalization: missing_sink_topic",
+            "fields": [],
+        }
     ]

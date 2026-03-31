@@ -255,6 +255,8 @@ def test_main_provider_mode_prints_provider_path(
     assert "Requested extractor: provider" in captured.out
     assert "Extraction path: provider" in captured.out
     assert "Fallback occurred: no" in captured.out
+    assert "Provider quality: acceptable" in captured.out
+    assert "Provider quality summary: acceptable" in captured.out
     assert "Ambiguity policy: fail" in captured.out
     assert "Fallback reason:" not in captured.out
 
@@ -296,6 +298,59 @@ def test_main_provider_fallback_prints_fallback_summary(
     assert "Requested extractor: provider" in captured.out
     assert "Extraction path: provider -> deterministic" in captured.out
     assert "Fallback occurred: yes" in captured.out
+    assert "Provider quality: unusable" in captured.out
     assert "Fallback reason: ProviderExtractionError: Provider call failed: provider unreachable" in captured.out
     assert "Ambiguity policy: fail" in captured.out
     assert "Provider extraction failed, falling back to deterministic:" in captured.err
+
+
+def test_main_provider_quality_ambiguous_is_visible(
+    tmp_path: Path,
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI should show provider quality when provider output is usable but ambiguous."""
+    provider_module = tmp_path / "cli_provider_ambiguous.py"
+    provider_module.write_text(
+        textwrap.dedent("""\
+            import json
+
+            def call_provider(request: str, prompt: str) -> str:
+                return json.dumps({
+                    "job_family": "keyed_temporal_rule",
+                    "job_name": "fraud-alert-job",
+                    "source_topic": "payments",
+                    "key_by": "account_id",
+                    "event_time_field": "event_time",
+                    "input_event_name": "InputEvent",
+                    "output_event_name": "AlertEvent",
+                    "rule_type": "two_events_within_window",
+                    "rule_condition": "second payment within 10 minutes",
+                    "time_window_minutes": 10,
+                })
+        """),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setenv(PROVIDER_ENTRY_POINT_ENV_VAR, "cli_provider_ambiguous:call_provider")
+
+    output_dir = tmp_path / "provider-ambiguous-generated"
+    exit_code = main(
+        [
+            "--request",
+            "any request",
+            "--output",
+            str(output_dir),
+            "--extractor",
+            "provider",
+            "--ambiguity-policy",
+            "minor_defaults",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Provider quality: ambiguous" in captured.out
+    assert "Provider quality summary: Provider output remains ambiguous after normalization: missing_sink_topic" in captured.out
+    assert "Ambiguity result: used_safe_defaults" in captured.out

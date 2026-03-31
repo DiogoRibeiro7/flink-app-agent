@@ -63,6 +63,8 @@ def test_provider_success_returns_provider_outcome() -> None:
     assert outcome.fallback_reason is None
     assert outcome.provider_error is None
     assert outcome.provider_status == "available"
+    assert outcome.provider_quality == "acceptable"
+    assert outcome.provider_quality_summary == "acceptable"
     assert outcome.warnings == ()
     assert outcome.errors == ()
 
@@ -144,6 +146,100 @@ def test_provider_bad_json_with_deterministic_fallback_succeeds() -> None:
     assert "invalid JSON" in outcome.fallback_reason
     assert outcome.provider_error is not None
     assert outcome.provider_status == "unavailable"
+    assert outcome.provider_quality == "unusable"
+
+
+def test_provider_incomplete_output_is_marked_ambiguous_under_minor_defaults() -> None:
+    """Missing low-risk fields should be visible as ambiguous provider quality."""
+    def incomplete_provider(_: str, __: str) -> str:
+        return json.dumps({
+            "job_family": "keyed_temporal_rule",
+            "job_name": "fraud-alert-job",
+            "source_topic": "payments",
+            "key_by": "account_id",
+            "event_time_field": "event_time",
+            "input_event_name": "InputEvent",
+            "output_event_name": "AlertEvent",
+            "rule_type": "two_events_within_window",
+            "rule_condition": "second payment within 10 minutes",
+            "time_window_minutes": 10,
+        })
+
+    config = ExtractorConfig(
+        mode="provider",
+        fallback="fail",
+        ambiguity_policy="minor_defaults",
+        call_provider=incomplete_provider,
+    )
+
+    spec, outcome = parse_request("any request", extractor_config=config)
+
+    assert spec.sink_topic == "inferred-events"
+    assert outcome.provider_quality == "ambiguous"
+    assert outcome.provider_quality_summary == (
+        "Provider output remains ambiguous after normalization: missing_sink_topic"
+    )
+
+
+def test_provider_inconsistent_output_fails_quality_gate_without_fallback() -> None:
+    """Family-specific incoherence should fail the provider quality gate."""
+    def inconsistent_provider(_: str, __: str) -> str:
+        return json.dumps({
+            "job_family": "windowed_aggregation",
+            "job_name": "sensor-events-count-job",
+            "source_topic": "sensor-events",
+            "sink_topic": "aggregated-events",
+            "key_by": "device_id",
+            "event_time_field": "event_time",
+            "input_event_name": "InputEvent",
+            "output_event_name": "SensorEventsCount",
+            "rule_type": "count_by_key_window",
+            "rule_condition": "emit alert events quickly",
+            "time_window_minutes": 5,
+        })
+
+    config = ExtractorConfig(
+        mode="provider",
+        fallback="fail",
+        call_provider=inconsistent_provider,
+    )
+
+    with pytest.raises(ProviderExtractionError, match="quality gate"):
+        parse_request("any request", extractor_config=config)
+
+
+def test_provider_unusable_output_triggers_deterministic_fallback() -> None:
+    """Unusable provider output should degrade to deterministic fallback when configured."""
+    def incomplete_provider(_: str, __: str) -> str:
+        return json.dumps({
+            "job_family": "keyed_temporal_rule",
+            "source_topic": "payments",
+            "sink_topic": "alerts",
+            "key_by": "account_id",
+            "event_time_field": "event_time",
+            "input_event_name": "InputEvent",
+            "output_event_name": "AlertEvent",
+            "rule_type": "two_events_within_window",
+            "rule_condition": "second payment within 10 minutes",
+            "time_window_minutes": 10,
+        })
+
+    config = ExtractorConfig(
+        mode="provider",
+        fallback="deterministic",
+        call_provider=incomplete_provider,
+    )
+
+    spec, outcome = parse_request(
+        "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts",
+        extractor_config=config,
+    )
+
+    assert spec.source_topic == "payments"
+    assert outcome.actual_path == ("provider", "deterministic")
+    assert outcome.fallback_triggered is True
+    assert outcome.provider_quality == "unusable"
+    assert "quality gate" in outcome.fallback_reason
 
 
 # --- Deterministic mode (no fallback needed) ---
