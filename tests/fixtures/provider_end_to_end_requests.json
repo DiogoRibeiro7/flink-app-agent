@@ -19,6 +19,11 @@
             "deterministic"
           ],
           "fallback_occurred": false,
+          "ambiguity_status": "clear",
+          "ambiguity_policy": "fail",
+          "ambiguity_policy_result": "clear",
+          "ambiguity_issue_codes": [],
+          "injected_defaults": [],
           "warnings": [],
           "errors": []
         }
@@ -44,6 +49,11 @@
           ],
           "fallback_occurred": false,
           "provider_status": "available",
+          "ambiguity_status": "clear",
+          "ambiguity_policy": "fail",
+          "ambiguity_policy_result": "clear",
+          "ambiguity_issue_codes": [],
+          "injected_defaults": [],
           "warnings": [],
           "errors": []
         }
@@ -70,6 +80,11 @@
           ],
           "fallback_occurred": true,
           "provider_status": "unavailable",
+          "ambiguity_status": "clear",
+          "ambiguity_policy": "fail",
+          "ambiguity_policy_result": "clear",
+          "ambiguity_issue_codes": [],
+          "injected_defaults": [],
           "warnings": [
             "Provider extraction failed; deterministic fallback was used."
           ],

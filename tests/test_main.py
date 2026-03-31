@@ -38,6 +38,9 @@ def test_main_generates_project_and_prints_summary(
     assert "Requested extractor: deterministic" in captured.out
     assert "Extraction path: deterministic" in captured.out
     assert "Fallback occurred: no" in captured.out
+    assert "Ambiguity status: clear" in captured.out
+    assert "Ambiguity policy: fail" in captured.out
+    assert "Ambiguity result: clear" in captured.out
     assert "Job family: keyed_temporal_rule" in captured.out
     assert "Chosen template: flink_kafka_rule_job" in captured.out
     assert f"Generation target: {output_dir}" in captured.out
@@ -73,6 +76,7 @@ def test_main_generates_windowed_aggregation_project(tmp_path: Path, capsys) -> 
     assert "Requested extractor: deterministic" in captured.out
     assert "Extraction path: deterministic" in captured.out
     assert "Fallback occurred: no" in captured.out
+    assert "Ambiguity status: clear" in captured.out
     assert f"Generation report: {output_dir / REPORT_FILENAME}" in captured.out
     assert (output_dir / REPORT_FILENAME).exists()
 
@@ -154,6 +158,54 @@ def test_main_returns_non_zero_on_invalid_request(capsys) -> None:
     assert "source_topic" in captured.err
 
 
+def test_main_minor_ambiguity_policy_prints_warning_and_defaults(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    """The CLI should surface relaxed ambiguity handling explicitly."""
+    output_dir = tmp_path / "minor-defaults-generated"
+
+    exit_code = main(
+        [
+            "--request",
+            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+            "--output",
+            str(output_dir),
+            "--ambiguity-policy",
+            "minor_defaults",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Ambiguity status: minor" in captured.out
+    assert "Ambiguity policy: minor_defaults" in captured.out
+    assert "Ambiguity result: used_safe_defaults" in captured.out
+    assert "Injected defaults: sink_topic" in captured.out
+    assert "- EXTRACTION WARN: Applied safe default for sink_topic: inferred-events" in captured.out
+
+
+def test_main_major_ambiguity_fails_even_with_minor_defaults_policy(capsys) -> None:
+    """The CLI should still fail on major ambiguity under the relaxed policy."""
+    exit_code = main(
+        [
+            "--request",
+            "Read from Kafka sensor-events, emit BED_OUT within 20 minutes",
+            "--output",
+            "./out",
+            "--ambiguity-policy",
+            "minor_defaults",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "policy=minor_defaults" in captured.err
+    assert "failed_major" in captured.err
+
+
 def test_main_provider_mode_prints_provider_path(
     tmp_path: Path,
     capsys,
@@ -203,6 +255,7 @@ def test_main_provider_mode_prints_provider_path(
     assert "Requested extractor: provider" in captured.out
     assert "Extraction path: provider" in captured.out
     assert "Fallback occurred: no" in captured.out
+    assert "Ambiguity policy: fail" in captured.out
     assert "Fallback reason:" not in captured.out
 
 
@@ -244,4 +297,5 @@ def test_main_provider_fallback_prints_fallback_summary(
     assert "Extraction path: provider -> deterministic" in captured.out
     assert "Fallback occurred: yes" in captured.out
     assert "Fallback reason: ProviderExtractionError: Provider call failed: provider unreachable" in captured.out
+    assert "Ambiguity policy: fail" in captured.out
     assert "Provider extraction failed, falling back to deterministic:" in captured.err

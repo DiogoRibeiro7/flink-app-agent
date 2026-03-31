@@ -28,6 +28,11 @@ class ExtractionOutcomeReport:
     actual_path: list[str]
     fallback_occurred: bool
     provider_status: str | None
+    ambiguity_status: str
+    ambiguity_policy: str
+    ambiguity_policy_result: str
+    ambiguity_issue_codes: list[str]
+    injected_defaults: list[str]
     warnings: list[str]
     errors: list[str]
 
@@ -38,6 +43,11 @@ class ExtractionOutcomeReport:
             "fallback_policy": self.fallback_policy,
             "actual_path": list(self.actual_path),
             "fallback_occurred": self.fallback_occurred,
+            "ambiguity_status": self.ambiguity_status,
+            "ambiguity_policy": self.ambiguity_policy,
+            "ambiguity_policy_result": self.ambiguity_policy_result,
+            "ambiguity_issue_codes": list(self.ambiguity_issue_codes),
+            "injected_defaults": list(self.injected_defaults),
         }
         if self.provider_status is not None:
             payload["provider_status"] = self.provider_status
@@ -120,6 +130,11 @@ class GenerationReport:
             actual_path=list(eo.actual_path or (eo.extractor_used,)),
             fallback_occurred=eo.fallback_triggered,
             provider_status=eo.provider_status,
+            ambiguity_status=eo.ambiguity_status,
+            ambiguity_policy=eo.ambiguity_policy,
+            ambiguity_policy_result=eo.ambiguity_policy_result,
+            ambiguity_issue_codes=list(eo.ambiguity_issue_codes),
+            injected_defaults=list(eo.injected_defaults),
             warnings=list(_summarize_extraction_warnings(eo)),
             errors=list(_summarize_extraction_errors(eo)),
         )

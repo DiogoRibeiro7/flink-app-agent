@@ -10,6 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from flink_app_agent.ambiguity import AmbiguousRequestError
 from flink_app_agent.config import ExtractorConfig
 from flink_app_agent.constants import ProviderExtractionError
 from flink_app_agent.llm import SpecParsingError
@@ -171,6 +172,51 @@ def test_deterministic_mode_failure_is_not_caught_as_fallback() -> None:
     with pytest.raises(SpecParsingError, match="source_topic"):
         parse_request(
             "key by account_id, emit Alert within 10 minutes",
+            extractor_config=config,
+        )
+
+
+def test_fail_on_ambiguity_is_the_safe_default() -> None:
+    """The default ambiguity policy should fail rather than inject assumptions."""
+    config = ExtractorConfig(mode="deterministic")
+
+    with pytest.raises(AmbiguousRequestError, match="policy=fail"):
+        parse_request(
+            "Read from Kafka payments, key by account_id, emit Alert within 10 minutes",
+            extractor_config=config,
+        )
+
+
+def test_minor_ambiguity_policy_can_apply_safe_defaults_with_warning() -> None:
+    """A minor ambiguity can continue only with an explicit policy and warning."""
+    config = ExtractorConfig(
+        mode="deterministic",
+        ambiguity_policy="minor_defaults",
+    )
+
+    spec, outcome = parse_request(
+        "Read from Kafka payments, key by account_id, emit Alert within 10 minutes",
+        extractor_config=config,
+    )
+
+    assert spec.sink_topic == "inferred-events"
+    assert outcome.ambiguity_status == "minor"
+    assert outcome.ambiguity_policy == "minor_defaults"
+    assert outcome.ambiguity_policy_result == "used_safe_defaults"
+    assert outcome.injected_defaults == ("sink_topic",)
+    assert outcome.warnings == ("Applied safe default for sink_topic: inferred-events",)
+
+
+def test_major_ambiguity_still_fails_under_minor_defaults_policy() -> None:
+    """Major ambiguity should still fail even under the relaxed policy."""
+    config = ExtractorConfig(
+        mode="deterministic",
+        ambiguity_policy="minor_defaults",
+    )
+
+    with pytest.raises(AmbiguousRequestError, match="failed_major"):
+        parse_request(
+            "Read from Kafka payments, emit Alert within 10 minutes",
             extractor_config=config,
         )
 

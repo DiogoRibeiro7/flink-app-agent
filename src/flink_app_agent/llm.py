@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-from .ambiguity import AmbiguityAssessment, CandidateAmbiguityAssessor
+from .ambiguity import AmbiguityAssessment, AmbiguousRequestError, CandidateAmbiguityAssessor
 from .constants import ProviderExtractionError
 from .provider_normalizer import normalize_provider_payload
 from .spec import (
@@ -27,16 +27,6 @@ EXTRACT_SPEC_PROMPT = "extract_spec.md"
 
 class SpecParsingError(ValueError):
     """Raised when a request does not match the supported deterministic patterns."""
-
-
-class AmbiguousRequestError(ValueError):
-    """Raised when a candidate payload remains ambiguous before validation."""
-
-    def __init__(self, assessment: AmbiguityAssessment) -> None:
-        """Store the structured ambiguity assessment on the exception."""
-        self.assessment = assessment
-        codes = ", ".join(issue.code for issue in assessment.issues)
-        super().__init__(f"Ambiguous request: {codes}")
 
 
 class PromptRepository(Protocol):

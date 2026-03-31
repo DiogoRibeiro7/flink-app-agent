@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from .ambiguity import AmbiguousRequestError
+from .ambiguity_policy import AmbiguityPolicy
 from .config import (
     ConfigurationError,
     ExtractionOutcome,
@@ -17,10 +19,10 @@ from .constants import GENERATION_REPORT_FILENAME, ProviderExtractionError
 from .generation_context import GenerationContext
 from .generator import ProjectGenerator
 from .llm import (
-    AmbiguousRequestError,
     SpecParsingError,
-    build_default_spec_extractor,
-    build_provider_spec_extractor,
+    SpecExtractionService,
+    build_default_extraction_service,
+    build_provider_extraction_service,
 )
 from .repair import DeterministicRepairer, RepairResult
 from .report import GenerationReport, write_generation_report
@@ -75,6 +77,16 @@ def build_parser() -> argparse.ArgumentParser:
             "'deterministic' (fall back to deterministic extractor)."
         ),
     )
+    parser.add_argument(
+        "--ambiguity-policy",
+        choices=["fail", "minor_defaults"],
+        default=None,
+        help=(
+            "How to handle ambiguity: "
+            "'fail' (default, abort on ambiguity) or "
+            "'minor_defaults' (allow documented safe defaults for minor ambiguity only)."
+        ),
+    )
     return parser
 
 
@@ -94,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         extractor_config = resolve_extractor_config(
             cli_extractor=args.extractor,
             cli_fallback=args.fallback,
+            cli_ambiguity_policy=args.ambiguity_policy,
         )
         context = build_generation_context(
             args.request, output_dir, extractor_config=extractor_config,
@@ -130,14 +143,21 @@ def parse_request(
     extractor produced the result and whether fallback was triggered.
     """
     config = extractor_config or resolve_extractor_config()
+    policy = AmbiguityPolicy(name=config.ambiguity_policy)
 
     if config.mode != "provider":
-        spec = build_default_spec_extractor().extract_spec(request)
-        return spec, ExtractionOutcome(
-            requested_mode=config.mode,
-            fallback_policy=config.fallback,
-            extractor_used="deterministic",
-            actual_path=("deterministic",),
+        service = build_default_extraction_service()
+        return _extract_with_policy(
+            request=request,
+            extraction_outcome=ExtractionOutcome(
+                requested_mode=config.mode,
+                fallback_policy=config.fallback,
+                extractor_used="deterministic",
+                actual_path=("deterministic",),
+                ambiguity_policy=config.ambiguity_policy,
+            ),
+            service=service,
+            policy=policy,
         )
 
     if config.call_provider is None:
@@ -146,15 +166,22 @@ def parse_request(
         )
 
     try:
-        extractor = build_provider_spec_extractor(config.call_provider)
-        spec = extractor.extract_spec(request)
-        return spec, ExtractionOutcome(
-            requested_mode="provider",
-            fallback_policy=config.fallback,
-            extractor_used="provider",
-            actual_path=("provider",),
-            provider_status="available",
+        service = build_provider_extraction_service(config.call_provider)
+        return _extract_with_policy(
+            request=request,
+            extraction_outcome=ExtractionOutcome(
+                requested_mode="provider",
+                fallback_policy=config.fallback,
+                extractor_used="provider",
+                actual_path=("provider",),
+                provider_status="available",
+                ambiguity_policy=config.ambiguity_policy,
+            ),
+            service=service,
+            policy=policy,
         )
+    except AmbiguousRequestError:
+        raise
     except (ProviderExtractionError, Exception) as exc:
         if config.fallback != "deterministic":
             raise
@@ -165,26 +192,66 @@ def parse_request(
             f"{error_type}: {error_message}",
             file=sys.stderr,
         )
-        spec = build_default_spec_extractor().extract_spec(request)
-        return spec, ExtractionOutcome(
-            requested_mode="provider",
-            fallback_policy="deterministic",
-            extractor_used="deterministic",
-            actual_path=("provider", "deterministic"),
-            fallback_triggered=True,
-            fallback_reason=f"{error_type}: {error_message}",
-            provider_error=error_message,
-            provider_status="unavailable",
-            warnings=(
-                "Provider extraction failed; deterministic fallback was used.",
+        return _extract_with_policy(
+            request=request,
+            extraction_outcome=ExtractionOutcome(
+                requested_mode="provider",
+                fallback_policy="deterministic",
+                extractor_used="deterministic",
+                actual_path=("provider", "deterministic"),
+                fallback_triggered=True,
+                fallback_reason=f"{error_type}: {error_message}",
+                provider_error=error_message,
+                provider_status="unavailable",
+                ambiguity_policy=config.ambiguity_policy,
+                warnings=(
+                    "Provider extraction failed; deterministic fallback was used.",
+                ),
+                errors=(f"{error_type}: {error_message}",),
             ),
-            errors=(f"{error_type}: {error_message}",),
+            service=build_default_extraction_service(),
+            policy=policy,
         )
 
 
 def should_print_template_info(args: argparse.Namespace) -> bool:
     """Return whether the CLI should print resolved template metadata."""
     return args.print_template_info
+
+
+def _extract_with_policy(
+    request: str,
+    extraction_outcome: ExtractionOutcome,
+    service: SpecExtractionService,
+    policy: AmbiguityPolicy,
+) -> tuple[FlinkJobSpec, ExtractionOutcome]:
+    """Run extraction analysis, apply ambiguity policy, then validate."""
+    analysis = service.analyze(request)
+    policy_result = policy.apply(analysis.ambiguity, analysis.payload)
+    payload = dict(analysis.payload)
+    payload.update(policy_result.applied_defaults)
+    spec = service.validator.validate(payload)
+    issue_codes = tuple(item.issue.code for item in policy_result.classified_issues)
+    warnings = extraction_outcome.warnings + policy_result.warnings
+    ambiguity_warning = "; ".join(policy_result.warnings) if policy_result.warnings else None
+    return spec, ExtractionOutcome(
+        requested_mode=extraction_outcome.requested_mode,
+        fallback_policy=extraction_outcome.fallback_policy,
+        extractor_used=extraction_outcome.extractor_used,
+        actual_path=extraction_outcome.actual_path,
+        fallback_triggered=extraction_outcome.fallback_triggered,
+        fallback_reason=extraction_outcome.fallback_reason,
+        provider_error=extraction_outcome.provider_error,
+        provider_status=extraction_outcome.provider_status,
+        ambiguity_status=policy_result.classification,
+        ambiguity_policy=policy_result.policy_name,
+        ambiguity_policy_result=policy_result.status,
+        ambiguity_issue_codes=issue_codes,
+        ambiguity_warning=ambiguity_warning,
+        injected_defaults=tuple(sorted(policy_result.applied_defaults)),
+        warnings=warnings,
+        errors=extraction_outcome.errors,
+    )
 
 
 def build_generation_context(
@@ -305,6 +372,13 @@ def print_generation_summary(context: GenerationContext) -> None:
     print(f"Fallback occurred: {_format_bool(outcome.fallback_triggered)}")
     if outcome.fallback_triggered and outcome.fallback_reason is not None:
         print(f"Fallback reason: {outcome.fallback_reason}")
+    print(f"Ambiguity status: {outcome.ambiguity_status}")
+    print(f"Ambiguity policy: {outcome.ambiguity_policy}")
+    print(f"Ambiguity result: {outcome.ambiguity_policy_result}")
+    if outcome.injected_defaults:
+        print(f"Injected defaults: {', '.join(outcome.injected_defaults)}")
+    for item in outcome.warnings:
+        print(f"- EXTRACTION WARN: {item}")
     print(f"Job family: {context.spec.job_family}")
     print(f"Chosen template: {context.template.template_id}")
     print(f"Generation target: {context.output_dir}")
