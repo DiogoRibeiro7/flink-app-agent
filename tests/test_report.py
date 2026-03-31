@@ -8,6 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from flink_app_agent.ambiguity import AmbiguityIssue, AmbiguityAssessment
+from flink_app_agent.config import AmbiguityFinding, DefaultInjection, ExtractionOutcome
 from flink_app_agent.generation_context import GenerationContext
 from flink_app_agent.generator import ProjectGenerator
 from flink_app_agent.llm import build_default_spec_extractor
@@ -68,15 +70,18 @@ def test_generation_report_file_is_created_with_key_fields(tmp_path: Path) -> No
     assert payload["extraction_outcome"]["fallback_policy"] == "fail"
     assert payload["extraction_outcome"]["actual_path"] == ["deterministic"]
     assert payload["extraction_outcome"]["fallback_occurred"] is False
+    assert payload["extraction_outcome"]["interpretation_risk"] == "low"
     assert payload["extraction_outcome"]["ambiguity_status"] == "clear"
     assert payload["extraction_outcome"]["ambiguity_policy"] == "fail"
     assert payload["extraction_outcome"]["ambiguity_policy_result"] == "clear"
-    assert payload["extraction_outcome"]["ambiguity_issue_codes"] == []
-    assert payload["extraction_outcome"]["injected_defaults"] == []
+    assert payload["extraction_outcome"]["ambiguity_findings"] == []
+    assert payload["extraction_outcome"]["defaults_injected"] == []
     assert payload["extraction_outcome"]["warnings"] == []
     assert payload["extraction_outcome"]["errors"] == []
     assert "provider_status" not in payload["extraction_outcome"]
     assert payload["pipeline_status"] == "passed"
+    assert payload["failure_stage"] is None
+    assert payload["failure_reason"] is None
     assert payload["repair_pass"]["passes_run"] == 0
     assert payload["compile_verification"] is None
 
@@ -107,20 +112,22 @@ def test_deterministic_extraction_report_content_is_compact_and_stable() -> None
         "fallback_policy": "fail",
         "actual_path": ["deterministic"],
         "fallback_occurred": False,
+        "interpretation_risk": "low",
         "ambiguity_status": "clear",
         "ambiguity_policy": "fail",
         "ambiguity_policy_result": "clear",
-        "ambiguity_issue_codes": [],
-        "injected_defaults": [],
+        "ambiguity_findings": [],
+        "defaults_injected": [],
         "warnings": [],
         "errors": [],
     }
     assert json.dumps(extraction_payload) == (
         '{"selected_mode": "deterministic", "fallback_policy": "fail", '
         '"actual_path": ["deterministic"], "fallback_occurred": false, '
+        '"interpretation_risk": "low", '
         '"ambiguity_status": "clear", "ambiguity_policy": "fail", '
-        '"ambiguity_policy_result": "clear", "ambiguity_issue_codes": [], '
-        '"injected_defaults": [], "warnings": [], "errors": []}'
+        '"ambiguity_policy_result": "clear", "ambiguity_findings": [], '
+        '"defaults_injected": [], "warnings": [], "errors": []}'
     )
 
 
@@ -171,11 +178,12 @@ def test_provider_backed_extraction_report_content() -> None:
         "actual_path": ["provider"],
         "fallback_occurred": False,
         "provider_status": "available",
+        "interpretation_risk": "low",
         "ambiguity_status": "clear",
         "ambiguity_policy": "fail",
         "ambiguity_policy_result": "clear",
-        "ambiguity_issue_codes": [],
-        "injected_defaults": [],
+        "ambiguity_findings": [],
+        "defaults_injected": [],
         "warnings": [],
         "errors": [],
     }
@@ -214,12 +222,14 @@ def test_fallback_extraction_report_content() -> None:
     assert extraction_payload["fallback_policy"] == "deterministic"
     assert extraction_payload["actual_path"] == ["provider", "deterministic"]
     assert extraction_payload["fallback_occurred"] is True
+    assert extraction_payload["fallback_reason"] == "ProviderExtractionError: Provider call failed: provider unreachable"
     assert extraction_payload["provider_status"] == "unavailable"
+    assert extraction_payload["interpretation_risk"] == "elevated"
     assert extraction_payload["ambiguity_status"] == "clear"
     assert extraction_payload["ambiguity_policy"] == "fail"
     assert extraction_payload["ambiguity_policy_result"] == "clear"
-    assert extraction_payload["ambiguity_issue_codes"] == []
-    assert extraction_payload["injected_defaults"] == []
+    assert extraction_payload["ambiguity_findings"] == []
+    assert extraction_payload["defaults_injected"] == []
     assert extraction_payload["warnings"] == [
         "Provider extraction failed; deterministic fallback was used.",
     ]
@@ -255,11 +265,140 @@ def test_minor_ambiguity_report_content_reflects_policy_and_defaults() -> None:
         "fallback_policy": "fail",
         "actual_path": ["deterministic"],
         "fallback_occurred": False,
+        "interpretation_risk": "elevated",
         "ambiguity_status": "minor",
         "ambiguity_policy": "minor_defaults",
         "ambiguity_policy_result": "used_safe_defaults",
-        "ambiguity_issue_codes": ["missing_sink_topic"],
-        "injected_defaults": ["sink_topic"],
+        "ambiguity_findings": [
+            {
+                "code": "missing_sink_topic",
+                "severity": "minor",
+                "message": "The request does not identify a sink topic.",
+                "fields": ["sink_topic"],
+            }
+        ],
+        "defaults_injected": [
+            {
+                "field": "sink_topic",
+                "value": "inferred-events",
+                "reason": "safe default applied under the active ambiguity policy",
+            }
+        ],
         "warnings": ["Applied safe default for sink_topic: inferred-events"],
         "errors": [],
     }
+
+
+def test_failure_report_content_for_ambiguity_related_failure() -> None:
+    """A failure report should retain trust/provenance details when generation stops early."""
+    extraction_outcome = ExtractionOutcome(
+        requested_mode="deterministic",
+        fallback_policy="fail",
+        extractor_used="deterministic",
+        actual_path=("deterministic",),
+        ambiguity_status="major",
+        ambiguity_policy="fail",
+        ambiguity_policy_result="failed",
+        ambiguity_findings=(
+            AmbiguityFinding(
+                code="missing_key_field",
+                severity="major",
+                message="The request does not identify a key field.",
+                fields=("key_by",),
+            ),
+        ),
+        interpretation_risk="elevated",
+        errors=("Ambiguous request: missing_key_field",),
+    )
+
+    report = GenerationReport.from_failure(
+        request_text="Read from Kafka payments, emit Alert within 10 minutes, write to Kafka alerts",
+        output_directory=Path("out"),
+        extraction_outcome=extraction_outcome,
+        failure_stage="extraction",
+        failure_reason="Ambiguous request: missing_key_field",
+    )
+
+    assert report.to_dict() == {
+        "request_text": "Read from Kafka payments, emit Alert within 10 minutes, write to Kafka alerts",
+        "job_family": None,
+        "parsed_spec_summary": None,
+        "selected_template": None,
+        "output_directory": "out",
+        "generated_files_count": 0,
+        "generated_files": [],
+        "extraction_outcome": {
+            "selected_mode": "deterministic",
+            "fallback_policy": "fail",
+            "actual_path": ["deterministic"],
+            "fallback_occurred": False,
+            "interpretation_risk": "elevated",
+            "ambiguity_status": "major",
+            "ambiguity_policy": "fail",
+            "ambiguity_policy_result": "failed",
+            "ambiguity_findings": [
+                {
+                    "code": "missing_key_field",
+                    "severity": "major",
+                    "message": "The request does not identify a key field.",
+                    "fields": ["key_by"],
+                }
+            ],
+            "defaults_injected": [],
+            "warnings": [],
+            "errors": ["Ambiguous request: missing_key_field"],
+        },
+        "pipeline_status": "failed_before_generation",
+        "failure_stage": "extraction",
+        "failure_reason": "Ambiguous request: missing_key_field",
+        "repair_pass": {"repairs": [], "passes_run": 0, "any_repairs": False},
+        "structural_check": None,
+        "compile_verification": None,
+        "warnings": [],
+    }
+
+
+def test_report_content_can_combine_fallback_and_injected_defaults() -> None:
+    """The provenance block should show fallback and safe defaults together."""
+    request = "Read from Kafka payments, key by account_id, emit Alert within 10 minutes"
+
+    def failing_provider(_: str, __: str) -> str:
+        raise ConnectionError("provider unreachable")
+
+    spec, extraction_outcome = parse_request(
+        request,
+        extractor_config=ExtractorConfig(
+            mode="provider",
+            fallback="deterministic",
+            ambiguity_policy="minor_defaults",
+            call_provider=failing_provider,
+        ),
+    )
+
+    report = GenerationReport.from_run(
+        request_text=request,
+        spec=spec,
+        selected_template="flink_kafka_rule_job",
+        output_directory=Path("out"),
+        generated_files=[],
+        extraction_outcome=extraction_outcome,
+        repair_result=None,
+        review_result=ReviewResult().finalize(),
+        verification_result=None,
+    )
+
+    extraction_payload = report.to_dict()["extraction_outcome"]
+
+    assert extraction_payload["actual_path"] == ["provider", "deterministic"]
+    assert extraction_payload["fallback_occurred"] is True
+    assert extraction_payload["defaults_injected"] == [
+        {
+            "field": "sink_topic",
+            "value": "inferred-events",
+            "reason": "safe default applied under the active ambiguity policy",
+        }
+    ]
+    assert extraction_payload["warnings"] == [
+        "Provider extraction failed; deterministic fallback was used.",
+        "Applied safe default for sink_topic: inferred-events",
+    ]

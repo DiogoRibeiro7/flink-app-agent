@@ -19,11 +19,12 @@
             "deterministic"
           ],
           "fallback_occurred": false,
+          "interpretation_risk": "low",
           "ambiguity_status": "clear",
           "ambiguity_policy": "fail",
           "ambiguity_policy_result": "clear",
-          "ambiguity_issue_codes": [],
-          "injected_defaults": [],
+          "ambiguity_findings": [],
+          "defaults_injected": [],
           "warnings": [],
           "errors": []
         }
@@ -49,11 +50,12 @@
           ],
           "fallback_occurred": false,
           "provider_status": "available",
+          "interpretation_risk": "low",
           "ambiguity_status": "clear",
           "ambiguity_policy": "fail",
           "ambiguity_policy_result": "clear",
-          "ambiguity_issue_codes": [],
-          "injected_defaults": [],
+          "ambiguity_findings": [],
+          "defaults_injected": [],
           "warnings": [],
           "errors": []
         }
@@ -79,12 +81,14 @@
             "deterministic"
           ],
           "fallback_occurred": true,
+          "fallback_reason": "ProviderExtractionError: Provider returned invalid JSON: Expecting value: line 1 column 1 (char 0)",
           "provider_status": "unavailable",
+          "interpretation_risk": "elevated",
           "ambiguity_status": "clear",
           "ambiguity_policy": "fail",
           "ambiguity_policy_result": "clear",
-          "ambiguity_issue_codes": [],
-          "injected_defaults": [],
+          "ambiguity_findings": [],
+          "defaults_injected": [],
           "warnings": [
             "Provider extraction failed; deterministic fallback was used."
           ],
