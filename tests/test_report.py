@@ -20,7 +20,7 @@ from flink_app_agent.template_registry import TemplateRegistry
 
 def test_generation_report_file_is_created_with_key_fields(tmp_path: Path) -> None:
     """The generation report should be written into the generated project directory."""
-    request = "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes"
+    request = "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events"
     spec = build_default_spec_extractor().extract_spec(request)
     template = TemplateRegistry.from_root(Path(__file__).resolve().parents[1] / "templates").resolve_for_spec(spec)
     output_dir = tmp_path / "generated"
@@ -78,7 +78,7 @@ def test_generation_report_file_is_created_with_key_fields(tmp_path: Path) -> No
 
 def test_deterministic_extraction_report_content_is_compact_and_stable() -> None:
     """Deterministic extraction provenance should be compact and deterministic."""
-    request = "Read from Kafka payments, key by account_id, emit Alert within 10 minutes"
+    request = "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts"
     spec, extraction_outcome = parse_request(
         request,
         extractor_config=ExtractorConfig(mode="deterministic"),
@@ -166,7 +166,7 @@ def test_provider_backed_extraction_report_content() -> None:
 
 def test_fallback_extraction_report_content() -> None:
     """Fallback provenance should retain the attempted provider path and error summary."""
-    request = "Read from Kafka payments, key by account_id, emit Alert within 10 minutes"
+    request = "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts"
 
     def failing_provider(_: str, __: str) -> str:
         raise ConnectionError("provider unreachable")

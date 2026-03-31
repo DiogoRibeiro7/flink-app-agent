@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from .ambiguity import AmbiguityAssessment, CandidateAmbiguityAssessor
 from .constants import ProviderExtractionError
 from .provider_normalizer import normalize_provider_payload
 from .spec import (
@@ -26,6 +27,16 @@ EXTRACT_SPEC_PROMPT = "extract_spec.md"
 
 class SpecParsingError(ValueError):
     """Raised when a request does not match the supported deterministic patterns."""
+
+
+class AmbiguousRequestError(ValueError):
+    """Raised when a candidate payload remains ambiguous before validation."""
+
+    def __init__(self, assessment: AmbiguityAssessment) -> None:
+        """Store the structured ambiguity assessment on the exception."""
+        self.assessment = assessment
+        codes = ", ".join(issue.code for issue in assessment.issues)
+        super().__init__(f"Ambiguous request: {codes}")
 
 
 class PromptRepository(Protocol):
@@ -100,6 +111,13 @@ class PydanticSpecValidator:
         return FlinkJobSpec.from_llm_payload(payload)
 
 
+class AmbiguityAssessor(Protocol):
+    """Interface for assessing ambiguity before final spec validation."""
+
+    def assess(self, request: str, payload: dict[str, Any]) -> AmbiguityAssessment:
+        """Return a structured ambiguity assessment for one candidate payload."""
+
+
 @dataclass(frozen=True)
 class SpecExtractionService:
     """Coordinate preprocessing, prompt loading, extraction, and validation."""
@@ -107,23 +125,43 @@ class SpecExtractionService:
     preprocessor: RequestPreprocessor
     prompt_repository: PromptRepository
     payload_extractor: SpecPayloadExtractor
+    ambiguity_assessor: AmbiguityAssessor
     validator: SpecValidator
     prompt_name: str = EXTRACT_SPEC_PROMPT
 
     def extract(self, request: str) -> FlinkJobSpec:
         """Run the full extraction flow and return a validated spec."""
+        analysis = self.analyze(request)
+        if analysis.ambiguity.is_ambiguous:
+            raise AmbiguousRequestError(analysis.ambiguity)
+        return self.validator.validate(analysis.payload)
+
+    def analyze(self, request: str) -> "ExtractionAnalysis":
+        """Run preprocessing and ambiguity assessment before final validation."""
         normalized_request = self.preprocessor.preprocess(request)
         prompt = self.prompt_repository.load(self.prompt_name)
         payload = self.payload_extractor.extract_payload(normalized_request, prompt)
-        return self.validator.validate(payload)
+        ambiguity = self.ambiguity_assessor.assess(normalized_request, payload)
+        return ExtractionAnalysis(
+            request=normalized_request,
+            payload=payload,
+            ambiguity=ambiguity,
+        )
+
+
+@dataclass(frozen=True)
+class ExtractionAnalysis:
+    """Intermediate extraction state before validation into ``FlinkJobSpec``."""
+
+    request: str
+    payload: dict[str, Any]
+    ambiguity: AmbiguityAssessment
 
 
 @dataclass(frozen=True)
 class DeterministicSpecPayloadExtractor:
     """Deterministic extractor for the current narrow request surface."""
 
-    default_sink_topic: str = "inferred-events"
-    default_aggregation_sink_topic: str = "aggregated-events"
     default_event_time_field: str = "ts"
     default_input_event_name: str = "InputEvent"
 
@@ -133,54 +171,86 @@ class DeterministicSpecPayloadExtractor:
 
         # TODO: Replace this regex-based implementation with a real provider-backed call.
         # TODO: Pass the contents of extract_spec.md into the future provider request.
-        source_topic = self._extract_source_topic(request)
-        key_by = self._extract_key_by(request)
-        time_window_minutes = int(self._extract_time_window_minutes(request))
+        payload: dict[str, Any] = {
+            "source_topic": self._extract_source_topic(request),
+            "event_time_field": self.default_event_time_field,
+            "input_event_name": self.default_input_event_name,
+        }
+
+        key_by = self._extract_optional_key_by(request)
+        if key_by is not None:
+            payload["key_by"] = key_by
+
+        sink_topic = self._extract_optional_sink_topic(request)
+        if sink_topic is not None:
+            payload["sink_topic"] = sink_topic
+
+        time_window_minutes = self._extract_optional_time_window_minutes(request)
+        if time_window_minutes is not None:
+            payload["time_window_minutes"] = time_window_minutes
+
+        if self._has_conflicting_family_signals(request):
+            return payload
 
         if self._is_windowed_aggregation_request(request):
-            return self._build_windowed_aggregation_payload(
-                source_topic=source_topic,
-                key_by=key_by,
-                time_window_minutes=time_window_minutes,
+            payload.update(
+                self._build_windowed_aggregation_payload(
+                    source_topic=payload["source_topic"],
+                    key_by=key_by,
+                    time_window_minutes=time_window_minutes,
+                )
             )
-        return self._build_keyed_rule_payload(
-            request=request,
-            source_topic=source_topic,
-            key_by=key_by,
-            time_window_minutes=time_window_minutes,
-        )
+            return payload
+
+        output_event_name = self._extract_optional_output_event_name(request)
+        if output_event_name is not None:
+            payload.update(
+                self._build_keyed_rule_payload(
+                    source_topic=payload["source_topic"],
+                    sink_topic=sink_topic,
+                    key_by=key_by,
+                    output_event_name=output_event_name,
+                    time_window_minutes=time_window_minutes,
+                )
+            )
+        return payload
 
     def _build_keyed_rule_payload(
         self,
-        request: str,
         source_topic: str,
-        key_by: str,
-        time_window_minutes: int,
+        sink_topic: str | None,
+        key_by: str | None,
+        output_event_name: str,
+        time_window_minutes: int | None,
     ) -> dict[str, Any]:
         """Build the payload for the keyed rule template family."""
-        output_event_name = to_pascal_case(self._extract_output_event_name(request))
-        return {
+        payload: dict[str, Any] = {
             "job_family": JOB_FAMILY_KEYED_RULE,
             "job_name": slugify(output_event_name) + "-job",
             "source_topic": source_topic,
-            "sink_topic": self.default_sink_topic,
-            "key_by": key_by,
             "event_time_field": self.default_event_time_field,
             "input_event_name": self.default_input_event_name,
             "output_event_name": output_event_name,
             "rule_type": ALLOWED_RULE_TYPE,
-            "rule_condition": (
+        }
+        if sink_topic is not None:
+            payload["sink_topic"] = sink_topic
+        if key_by is not None:
+            payload["key_by"] = key_by
+        if time_window_minutes is not None:
+            payload["time_window_minutes"] = time_window_minutes
+        if key_by is not None and time_window_minutes is not None:
+            payload["rule_condition"] = (
                 f"emit {output_event_name} when two keyed events match within "
                 f"{time_window_minutes} minutes"
-            ),
-            "time_window_minutes": time_window_minutes,
-        }
+            )
+        return payload
 
     def _build_windowed_aggregation_payload(
         self,
         source_topic: str,
-        key_by: str,
-        time_window_minutes: int,
+        key_by: str | None,
+        time_window_minutes: int | None,
     ) -> dict[str, Any]:
         """Build the payload for the windowed aggregation template family."""
         output_event_name = to_pascal_case(f"{source_topic} count")
@@ -188,16 +258,25 @@ class DeterministicSpecPayloadExtractor:
             "job_family": JOB_FAMILY_WINDOWED_AGGREGATION,
             "job_name": slugify(f"{source_topic} count") + "-job",
             "source_topic": source_topic,
-            "sink_topic": self.default_aggregation_sink_topic,
-            "key_by": key_by,
+            **({"key_by": key_by} if key_by is not None else {}),
             "event_time_field": self.default_event_time_field,
             "input_event_name": self.default_input_event_name,
             "output_event_name": output_event_name,
             "rule_type": WINDOWED_AGGREGATION_RULE_TYPE,
-            "rule_condition": (
-                f"count events by {key_by} within {time_window_minutes} minutes"
+            **(
+                {
+                    "rule_condition": (
+                        f"count events by {key_by} within {time_window_minutes} minutes"
+                    )
+                }
+                if key_by is not None and time_window_minutes is not None
+                else {}
             ),
-            "time_window_minutes": time_window_minutes,
+            **(
+                {"time_window_minutes": time_window_minutes}
+                if time_window_minutes is not None
+                else {}
+            ),
         }
 
     def _is_windowed_aggregation_request(self, request: str) -> bool:
@@ -205,6 +284,12 @@ class DeterministicSpecPayloadExtractor:
         return bool(
             re.search(r"\bcount(?: events?)?\b", request, flags=re.IGNORECASE)
             or re.search(r"\baggregate count\b", request, flags=re.IGNORECASE)
+        )
+
+    def _has_conflicting_family_signals(self, request: str) -> bool:
+        """Return whether the request mixes the two supported family signals."""
+        return self._is_windowed_aggregation_request(request) and bool(
+            re.search(r"\bemit\b", request, flags=re.IGNORECASE)
         )
 
     def _extract_source_topic(self, request: str) -> str:
@@ -228,9 +313,9 @@ class DeterministicSpecPayloadExtractor:
             ),
         )
 
-    def _extract_key_by(self, request: str) -> str:
-        """Extract the key field from supported wording variants."""
-        return self._extract_required(
+    def _extract_optional_key_by(self, request: str) -> str | None:
+        """Extract the key field when the request names one clearly."""
+        return self._extract_optional(
             request,
             patterns=[
                 r"key by ([A-Za-z0-9_.-]+)",
@@ -239,33 +324,26 @@ class DeterministicSpecPayloadExtractor:
                 r"group by ([A-Za-z0-9_.-]+)",
                 r"partition by ([A-Za-z0-9_.-]+)",
             ],
-            error_message=(
-                "Unable to parse key_by. Supported variants include "
-                "'key by <field>', 'keyed by <field>', 'keying by <field>', "
-                "'group by <field>', or 'partition by <field>'."
-            ),
         )
 
-    def _extract_output_event_name(self, request: str) -> str:
-        """Extract the output event name from supported wording variants."""
-        return self._extract_required(
+    def _extract_optional_output_event_name(self, request: str) -> str | None:
+        """Extract the output event name when the request states one clearly."""
+        value = self._extract_optional(
             request,
             patterns=[
                 r"emit ([A-Za-z0-9 _-]+?) events? within",
                 r"emit ([A-Za-z0-9 _-]+?) within",
                 r"emit ([A-Za-z0-9 _-]+?)(?: events?)?$",
                 r"writing ([A-Za-z0-9 _-]+?)(?: within|$)",
-                r"write ([A-Za-z0-9 _-]+?)(?: within|$)",
             ],
-            error_message=(
-                "Unable to parse output_event_name. Supported variants include "
-                "'emit <EVENT> within <N> minutes' or 'writing <EVENT> within <N> minutes'."
-            ),
         )
+        if value is None:
+            return None
+        return to_pascal_case(value)
 
-    def _extract_time_window_minutes(self, request: str) -> str:
-        """Extract the time window from supported minute-based wording variants."""
-        return self._extract_required(
+    def _extract_optional_time_window_minutes(self, request: str) -> int | None:
+        """Extract the time window when the request states a numeric value."""
+        value = self._extract_optional(
             request,
             patterns=[
                 r"within (\d+) minutes",
@@ -273,10 +351,22 @@ class DeterministicSpecPayloadExtractor:
                 r"every (\d+) minutes",
                 r"every (\d+) minute",
             ],
-            error_message=(
-                "Unable to parse time_window_minutes. Supported variants include "
-                "'within <N> minutes' or 'every <N> minutes'."
-            ),
+        )
+        if value is None:
+            return None
+        return int(value)
+
+    def _extract_optional_sink_topic(self, request: str) -> str | None:
+        """Extract the sink topic when the request names one explicitly."""
+        return self._extract_optional(
+            request,
+            patterns=[
+                r"write to kafka ([A-Za-z0-9._-]+)",
+                r"write results to kafka ([A-Za-z0-9._-]+)",
+                r"sink to kafka ([A-Za-z0-9._-]+)",
+                r"publish to kafka ([A-Za-z0-9._-]+)",
+                r"send to kafka ([A-Za-z0-9._-]+)",
+            ],
         )
 
     def _extract_required(
@@ -291,6 +381,18 @@ class DeterministicSpecPayloadExtractor:
             if match is not None:
                 return match.group(1).strip()
         raise SpecParsingError(error_message)
+
+    def _extract_optional(
+        self,
+        text: str,
+        patterns: list[str],
+    ) -> str | None:
+        """Extract the first matching value from the supplied pattern list."""
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match is not None:
+                return match.group(1).strip()
+        return None
 
 
 # Type alias for the injectable provider callable.
@@ -367,6 +469,7 @@ def build_default_extraction_service() -> SpecExtractionService:
         preprocessor=SimpleRequestPreprocessor(),
         prompt_repository=FilePromptRepository(),
         payload_extractor=DeterministicSpecPayloadExtractor(),
+        ambiguity_assessor=CandidateAmbiguityAssessor(),
         validator=PydanticSpecValidator(),
     )
 
@@ -386,6 +489,7 @@ def build_provider_extraction_service(
         payload_extractor=ProviderSpecPayloadExtractor(
             call_provider=call_provider,
         ),
+        ambiguity_assessor=CandidateAmbiguityAssessor(),
         validator=PydanticSpecValidator(),
     )
 

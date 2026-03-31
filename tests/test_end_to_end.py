@@ -19,7 +19,7 @@ def test_sensor_event_request_generates_coherent_project(tmp_path: Path) -> None
     """A realistic sensor-event request should survive the full local generation flow."""
     request = (
         "Read from Kafka sensor-events, key by user_id, "
-        "emit BED_OUT within 20 minutes"
+        "emit BED_OUT within 20 minutes, write to Kafka inferred-events"
     )
 
     spec = build_default_spec_extractor().extract_spec(request)
@@ -79,7 +79,7 @@ def test_windowed_aggregation_request_generates_coherent_project(tmp_path: Path)
     """A windowed aggregation request should resolve the second template family."""
     request = (
         "Read from Kafka sensor-events, group by device_id, "
-        "count events within 5 minutes"
+        "count events within 5 minutes, write to Kafka aggregated-events"
     )
 
     spec = build_default_spec_extractor().extract_spec(request)

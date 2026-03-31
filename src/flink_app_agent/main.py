@@ -17,6 +17,7 @@ from .constants import GENERATION_REPORT_FILENAME, ProviderExtractionError
 from .generation_context import GenerationContext
 from .generator import ProjectGenerator
 from .llm import (
+    AmbiguousRequestError,
     SpecParsingError,
     build_default_spec_extractor,
     build_provider_spec_extractor,
@@ -111,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         if context.review_result is not None and not context.review_result.success:
             return 1
         return 0
-    except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, ProviderExtractionError, ConfigurationError, ValueError) as exc:
+    except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, AmbiguousRequestError, ProviderExtractionError, ConfigurationError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:

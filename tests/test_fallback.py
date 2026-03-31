@@ -77,7 +77,7 @@ def test_provider_failure_without_fallback_raises() -> None:
 
     with pytest.raises(ProviderExtractionError):
         parse_request(
-            "Read from Kafka payments, key by account_id, emit Alert within 10 minutes",
+            "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts",
             extractor_config=config,
         )
 
@@ -90,7 +90,7 @@ def test_provider_bad_json_without_fallback_raises() -> None:
 
     with pytest.raises(ProviderExtractionError):
         parse_request(
-            "Read from Kafka payments, key by account_id, emit Alert within 10 minutes",
+            "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts",
             extractor_config=config,
         )
 
@@ -105,7 +105,7 @@ def test_provider_failure_with_deterministic_fallback_succeeds() -> None:
     )
 
     spec, outcome = parse_request(
-        "Read from Kafka payments, key by account_id, emit Alert within 10 minutes",
+        "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts",
         extractor_config=config,
     )
 
@@ -132,7 +132,7 @@ def test_provider_bad_json_with_deterministic_fallback_succeeds() -> None:
     )
 
     spec, outcome = parse_request(
-        "Read from Kafka payments, key by account_id, emit Alert within 10 minutes",
+        "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts",
         extractor_config=config,
     )
 
@@ -153,7 +153,7 @@ def test_deterministic_mode_returns_deterministic_outcome() -> None:
     config = ExtractorConfig(mode="deterministic")
 
     spec, outcome = parse_request(
-        "Read from Kafka payments, key by account_id, emit Alert within 10 minutes",
+        "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts",
         extractor_config=config,
     )
 
@@ -185,7 +185,7 @@ def test_fallback_outcome_records_reason() -> None:
     )
 
     _, outcome = parse_request(
-        "Read from Kafka payments, key by account_id, emit Alert within 10 minutes",
+        "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts",
         extractor_config=config,
     )
 

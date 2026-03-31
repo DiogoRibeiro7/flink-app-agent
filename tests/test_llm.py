@@ -12,7 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pydantic import ValidationError
 
+from flink_app_agent.ambiguity import CandidateAmbiguityAssessor
 from flink_app_agent.llm import (
+    AmbiguousRequestError,
     DeterministicSpecPayloadExtractor,
     FilePromptRepository,
     ProviderExtractionError,
@@ -48,7 +50,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
     ("user_request", "expected"),
     [
         (
-            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
             {
                 "job_family": "keyed_temporal_rule",
                 "job_name": "bedout-job",
@@ -64,7 +66,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
             },
         ),
         (
-            "Consume sensor-events from Kafka, key by user_id, emit BED_OUT events within 20 minutes",
+            "Consume sensor-events from Kafka, key by user_id, emit BED_OUT events within 20 minutes, write to Kafka inferred-events",
             {
                 "job_family": "keyed_temporal_rule",
                 "job_name": "bedout-job",
@@ -80,7 +82,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
             },
         ),
         (
-            "Build a Flink job reading sensor-events, keying by user_id, and writing BED_OUT within 20 minutes",
+            "Build a Flink job reading sensor-events, keying by user_id, and writing BED_OUT within 20 minutes, write to Kafka inferred-events",
             {
                 "job_family": "keyed_temporal_rule",
                 "job_name": "bedout-job",
@@ -96,7 +98,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
             },
         ),
         (
-            "Read topic sensor-events, group by user_id, emit BED_OUT within 20 minutes",
+            "Read topic sensor-events, group by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
             {
                 "job_family": "keyed_temporal_rule",
                 "job_name": "bedout-job",
@@ -112,7 +114,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
             },
         ),
         (
-            "Read from Kafka device-events, keyed by device_id, emit TEMP_SPIKE within 15 minutes",
+            "Read from Kafka device-events, keyed by device_id, emit TEMP_SPIKE within 15 minutes, write to Kafka inferred-events",
             {
                 "job_family": "keyed_temporal_rule",
                 "job_name": "tempspike-job",
@@ -128,7 +130,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
             },
         ),
         (
-            "Stream from Kafka sensor-events, partition by user_id, emit BED_OUT within 20 minutes",
+            "Stream from Kafka sensor-events, partition by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
             {
                 "job_family": "keyed_temporal_rule",
                 "job_name": "bedout-job",
@@ -144,7 +146,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
             },
         ),
         (
-            "Read from Kafka sensor-events, key by device_id, count events within 5 minutes",
+            "Read from Kafka sensor-events, key by device_id, count events within 5 minutes, write to Kafka aggregated-events",
             {
                 "job_family": "windowed_aggregation",
                 "job_name": "sensor-events-count-job",
@@ -160,7 +162,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
             },
         ),
         (
-            "Build a Flink job reading sensor-events, group by device_id, aggregate count every 10 minutes",
+            "Build a Flink job reading sensor-events, group by device_id, aggregate count every 10 minutes, write to Kafka aggregated-events",
             {
                 "job_family": "windowed_aggregation",
                 "job_name": "sensor-events-count-job",
@@ -176,7 +178,7 @@ def test_request_preprocessor_normalizes_whitespace() -> None:
             },
         ),
         (
-            "Listen to Kafka device-events, partition by device_id, count events within 15 minutes",
+            "Listen to Kafka device-events, partition by device_id, count events within 15 minutes, write to Kafka aggregated-events",
             {
                 "job_family": "windowed_aggregation",
                 "job_name": "device-events-count-job",
@@ -214,25 +216,13 @@ def test_stub_extractor_parses_supported_request_variants(
             "Key by user_id, emit BED_OUT within 20 minutes",
             "source_topic",
         ),
-        (
-            "Read from Kafka sensor-events, emit BED_OUT within 20 minutes",
-            "key_by",
-        ),
-        (
-            "Read from Kafka sensor-events, key by user_id, emit BED_OUT",
-            "time_window_minutes",
-        ),
-        (
-            "Read from Kafka sensor-events, count events within 5 minutes",
-            "key_by",
-        ),
     ],
 )
 def test_stub_extractor_rejects_invalid_requests(user_request: str, message: str) -> None:
     """Requests missing essential fields should fail with precise parsing errors."""
     extractor = StubSpecExtractor()
 
-    with pytest.raises(SpecParsingError, match=message):
+    with pytest.raises((SpecParsingError, ValidationError), match=message):
         extractor.extract_spec(user_request)
 
 
@@ -242,12 +232,13 @@ def test_service_backed_extractor_preserves_current_behavior() -> None:
         preprocessor=SimpleRequestPreprocessor(),
         prompt_repository=FilePromptRepository(),
         payload_extractor=DeterministicSpecPayloadExtractor(),
+        ambiguity_assessor=CandidateAmbiguityAssessor(),
         validator=PydanticSpecValidator(),
     )
     extractor = ServiceBackedSpecExtractor(extraction_service=service)
 
     spec = extractor.extract_spec(
-        "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes"
+        "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events"
     )
 
     assert spec.job_name == "bedout-job"
@@ -261,12 +252,13 @@ def test_service_backed_extractor_supports_windowed_aggregation_family() -> None
         preprocessor=SimpleRequestPreprocessor(),
         prompt_repository=FilePromptRepository(),
         payload_extractor=DeterministicSpecPayloadExtractor(),
+        ambiguity_assessor=CandidateAmbiguityAssessor(),
         validator=PydanticSpecValidator(),
     )
     extractor = ServiceBackedSpecExtractor(extraction_service=service)
 
     spec = extractor.extract_spec(
-        "Read from Kafka sensor-events, group by device_id, count events within 5 minutes"
+        "Read from Kafka sensor-events, group by device_id, count events within 5 minutes, write to Kafka aggregated-events"
     )
 
     assert spec.rule_type == "count_by_key_window"
@@ -280,6 +272,85 @@ def test_default_extractor_is_still_the_deterministic_stub() -> None:
 
     assert isinstance(extractor, StubSpecExtractor)
     assert isinstance(extractor.extraction_service.payload_extractor, DeterministicSpecPayloadExtractor)
+
+
+def test_ambiguity_assessment_allows_unambiguous_requests() -> None:
+    """Explicit sink, family, key, and window should pass the ambiguity gate."""
+    service = SpecExtractionService(
+        preprocessor=SimpleRequestPreprocessor(),
+        prompt_repository=FilePromptRepository(),
+        payload_extractor=DeterministicSpecPayloadExtractor(),
+        ambiguity_assessor=CandidateAmbiguityAssessor(),
+        validator=PydanticSpecValidator(),
+    )
+
+    analysis = service.analyze(
+        "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events"
+    )
+
+    assert analysis.ambiguity.is_ambiguous is False
+    assert analysis.ambiguity.to_dict() == {"is_ambiguous": False, "issues": []}
+
+
+def test_ambiguity_assessment_rejects_missing_sink_and_key_for_keyed_rule() -> None:
+    """A keyed-rule candidate should fail clearly when key and sink stay underspecified."""
+    extractor = build_default_spec_extractor()
+
+    with pytest.raises(AmbiguousRequestError) as exc_info:
+        extractor.extract_spec(
+            "Read from Kafka sensor-events, emit BED_OUT within 20 minutes"
+        )
+
+    assessment = exc_info.value.assessment
+    assert assessment.is_ambiguous is True
+    assert [issue.code for issue in assessment.issues] == [
+        "missing_sink_topic",
+        "missing_key_field",
+    ]
+
+
+def test_ambiguity_assessment_rejects_conflicting_aggregation_intent() -> None:
+    """Requests that mix emit and count wording should not be treated as certain."""
+    extractor = build_default_spec_extractor()
+
+    with pytest.raises(AmbiguousRequestError) as exc_info:
+        extractor.extract_spec(
+            "Read from Kafka sensor-events, key by user_id, emit ALERT and count events within 5 minutes, write to Kafka alerts"
+        )
+
+    assessment = exc_info.value.assessment
+    assert assessment.is_ambiguous is True
+    assert [issue.code for issue in assessment.issues] == [
+        "conflicting_aggregation_intent",
+    ]
+
+
+def test_provider_backed_ambiguity_is_assessed_before_validation() -> None:
+    """Provider-backed candidates should use the same ambiguity stage."""
+    def mock_provider(_: str, __: str) -> str:
+        return json.dumps(
+            {
+                "job_family": "keyed_temporal_rule",
+                "job_name": "fraud-alert-job",
+                "source_topic": "payments",
+                "key_by": "account_id",
+                "event_time_field": "event_time",
+                "input_event_name": "InputEvent",
+                "output_event_name": "AlertEvent",
+                "rule_type": "two_events_within_window",
+                "rule_condition": "second payment within 10 minutes",
+                "time_window_minutes": 10,
+            }
+        )
+
+    extractor = build_provider_spec_extractor(mock_provider)
+
+    with pytest.raises(AmbiguousRequestError) as exc_info:
+        extractor.extract_spec("any request")
+
+    assessment = exc_info.value.assessment
+    assert assessment.is_ambiguous is True
+    assert [issue.code for issue in assessment.issues] == ["missing_sink_topic"]
 
 
 VALID_PROVIDER_RESPONSE = json.dumps({
@@ -410,14 +481,25 @@ def test_provider_output_with_invalid_spec_fails_validation() -> None:
         extractor.extract_spec("any request")
 
 
-def test_provider_output_with_missing_fields_fails_at_normalization() -> None:
-    """Provider output missing required fields should fail during normalization."""
+def test_provider_output_with_non_ambiguity_missing_fields_fails_validation() -> None:
+    """Provider output that survives ambiguity checks still must pass final validation."""
     def mock_provider(request: str, prompt: str) -> str:
-        return json.dumps({"job_name": "test-job"})
+        return json.dumps({
+            "job_family": "keyed_temporal_rule",
+            "source_topic": "topic",
+            "sink_topic": "sink",
+            "key_by": "key",
+            "event_time_field": "ts",
+            "input_event_name": "In",
+            "output_event_name": "Out",
+            "rule_type": "two_events_within_window",
+            "rule_condition": "rule",
+            "time_window_minutes": 5,
+        })
 
     extractor = build_provider_spec_extractor(mock_provider)
 
-    with pytest.raises(ProviderExtractionError, match="missing required fields"):
+    with pytest.raises(ValidationError):
         extractor.extract_spec("any request")
 
 
