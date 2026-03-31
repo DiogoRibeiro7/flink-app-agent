@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import ExtractionOutcome
+from .config import AmbiguityFinding, DefaultInjection, ExtractionOutcome
 from .constants import GENERATION_REPORT_FILENAME
 from .generation_context import GenerationContext
 from .repair import RepairResult
@@ -20,19 +20,76 @@ REPORT_FILENAME = GENERATION_REPORT_FILENAME
 
 
 @dataclass(frozen=True)
-class ExtractionOutcomeReport:
-    """Serializable extraction provenance summary."""
+class AmbiguityFindingReport:
+    """Serializable ambiguity finding for report output."""
+
+    code: str
+    severity: str
+    message: str
+    fields: list[str]
+
+    @classmethod
+    def from_finding(cls, finding: AmbiguityFinding) -> "AmbiguityFindingReport":
+        """Build a report-friendly ambiguity finding."""
+        return cls(
+            code=finding.code,
+            severity=finding.severity,
+            message=finding.message,
+            fields=list(finding.fields),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable ambiguity finding."""
+        return {
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+            "fields": list(self.fields),
+        }
+
+
+@dataclass(frozen=True)
+class DefaultInjectionReport:
+    """Serializable record of one injected default."""
+
+    field: str
+    value: Any
+    reason: str
+
+    @classmethod
+    def from_injection(cls, injection: DefaultInjection) -> "DefaultInjectionReport":
+        """Build a report-friendly default-injection record."""
+        return cls(
+            field=injection.field,
+            value=injection.value,
+            reason=injection.reason,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable default-injection record."""
+        return {
+            "field": self.field,
+            "value": self.value,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class InterpretationProvenanceReport:
+    """Serializable interpretation trust/provenance summary."""
 
     selected_mode: str
     fallback_policy: str
     actual_path: list[str]
     fallback_occurred: bool
+    fallback_reason: str | None
     provider_status: str | None
+    interpretation_risk: str
     ambiguity_status: str
     ambiguity_policy: str
     ambiguity_policy_result: str
-    ambiguity_issue_codes: list[str]
-    injected_defaults: list[str]
+    ambiguity_findings: list[AmbiguityFindingReport]
+    defaults_injected: list[DefaultInjectionReport]
     warnings: list[str]
     errors: list[str]
 
@@ -43,14 +100,21 @@ class ExtractionOutcomeReport:
             "fallback_policy": self.fallback_policy,
             "actual_path": list(self.actual_path),
             "fallback_occurred": self.fallback_occurred,
+            "interpretation_risk": self.interpretation_risk,
             "ambiguity_status": self.ambiguity_status,
             "ambiguity_policy": self.ambiguity_policy,
             "ambiguity_policy_result": self.ambiguity_policy_result,
-            "ambiguity_issue_codes": list(self.ambiguity_issue_codes),
-            "injected_defaults": list(self.injected_defaults),
+            "ambiguity_findings": [
+                finding.to_dict() for finding in self.ambiguity_findings
+            ],
+            "defaults_injected": [
+                injection.to_dict() for injection in self.defaults_injected
+            ],
         }
         if self.provider_status is not None:
             payload["provider_status"] = self.provider_status
+        if self.fallback_reason is not None:
+            payload["fallback_reason"] = self.fallback_reason
         payload["warnings"] = list(self.warnings)
         payload["errors"] = list(self.errors)
         return payload
@@ -91,16 +155,18 @@ class GenerationReport:
     """Serializable report for one local generation run."""
 
     request_text: str
-    job_family: str
-    parsed_spec_summary: dict[str, Any]
-    selected_template: str
+    job_family: str | None
+    parsed_spec_summary: dict[str, Any] | None
+    selected_template: str | None
     output_directory: str
     generated_files_count: int
     generated_files: list[str]
-    extraction_outcome: ExtractionOutcomeReport
+    extraction_outcome: InterpretationProvenanceReport
     pipeline_status: str
+    failure_stage: str | None
+    failure_reason: str | None
     repair_pass: RepairPassReport
-    structural_check: StructuralCheckReport
+    structural_check: StructuralCheckReport | None
     compile_verification: CompileVerificationReport | None
     warnings: list[str]
 
@@ -124,17 +190,25 @@ class GenerationReport:
             extractor_used="deterministic",
             actual_path=("deterministic",),
         )
-        extraction_report = ExtractionOutcomeReport(
+        extraction_report = InterpretationProvenanceReport(
             selected_mode=eo.requested_mode,
             fallback_policy=eo.fallback_policy,
             actual_path=list(eo.actual_path or (eo.extractor_used,)),
             fallback_occurred=eo.fallback_triggered,
+            fallback_reason=eo.fallback_reason,
             provider_status=eo.provider_status,
+            interpretation_risk=eo.interpretation_risk,
             ambiguity_status=eo.ambiguity_status,
             ambiguity_policy=eo.ambiguity_policy,
             ambiguity_policy_result=eo.ambiguity_policy_result,
-            ambiguity_issue_codes=list(eo.ambiguity_issue_codes),
-            injected_defaults=list(eo.injected_defaults),
+            ambiguity_findings=[
+                AmbiguityFindingReport.from_finding(finding)
+                for finding in eo.ambiguity_findings
+            ],
+            defaults_injected=[
+                DefaultInjectionReport.from_injection(injection)
+                for injection in eo.default_injections
+            ],
             warnings=list(_summarize_extraction_warnings(eo)),
             errors=list(_summarize_extraction_errors(eo)),
         )
@@ -172,10 +246,64 @@ class GenerationReport:
             generated_files=[str(path) for path in generated_files],
             extraction_outcome=extraction_report,
             pipeline_status=pipeline_status,
+            failure_stage=None,
+            failure_reason=None,
             repair_pass=repair_report,
             structural_check=structural_report,
             compile_verification=compile_report,
             warnings=list(review_result.warnings),
+        )
+
+    @classmethod
+    def from_failure(
+        cls,
+        request_text: str,
+        output_directory: Path,
+        extraction_outcome: ExtractionOutcome,
+        failure_stage: str,
+        failure_reason: str,
+    ) -> "GenerationReport":
+        """Build a report for a run that failed before generation completed."""
+        extraction_report = InterpretationProvenanceReport(
+            selected_mode=extraction_outcome.requested_mode,
+            fallback_policy=extraction_outcome.fallback_policy,
+            actual_path=list(
+                extraction_outcome.actual_path or (extraction_outcome.extractor_used,)
+            ),
+            fallback_occurred=extraction_outcome.fallback_triggered,
+            fallback_reason=extraction_outcome.fallback_reason,
+            provider_status=extraction_outcome.provider_status,
+            interpretation_risk=extraction_outcome.interpretation_risk,
+            ambiguity_status=extraction_outcome.ambiguity_status,
+            ambiguity_policy=extraction_outcome.ambiguity_policy,
+            ambiguity_policy_result=extraction_outcome.ambiguity_policy_result,
+            ambiguity_findings=[
+                AmbiguityFindingReport.from_finding(finding)
+                for finding in extraction_outcome.ambiguity_findings
+            ],
+            defaults_injected=[
+                DefaultInjectionReport.from_injection(injection)
+                for injection in extraction_outcome.default_injections
+            ],
+            warnings=list(_summarize_extraction_warnings(extraction_outcome)),
+            errors=list(_summarize_extraction_errors(extraction_outcome)),
+        )
+        return cls(
+            request_text=request_text,
+            job_family=None,
+            parsed_spec_summary=None,
+            selected_template=None,
+            output_directory=str(output_directory),
+            generated_files_count=0,
+            generated_files=[],
+            extraction_outcome=extraction_report,
+            pipeline_status="failed_before_generation",
+            failure_stage=failure_stage,
+            failure_reason=failure_reason,
+            repair_pass=RepairPassReport(repairs=[], passes_run=0, any_repairs=False),
+            structural_check=None,
+            compile_verification=None,
+            warnings=[],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -190,21 +318,25 @@ class GenerationReport:
             "generated_files": list(self.generated_files),
             "extraction_outcome": self.extraction_outcome.to_dict(),
             "pipeline_status": self.pipeline_status,
+            "failure_stage": self.failure_stage,
+            "failure_reason": self.failure_reason,
             "repair_pass": {
                 "repairs": list(self.repair_pass.repairs),
                 "passes_run": self.repair_pass.passes_run,
                 "any_repairs": self.repair_pass.any_repairs,
             },
-            "structural_check": {
+            "structural_check": None,
+            "compile_verification": None,
+            "warnings": list(self.warnings),
+        }
+        if self.structural_check is not None:
+            payload["structural_check"] = {
                 "overall_status": self.structural_check.overall_status,
                 "success": self.structural_check.success,
                 "passed_checks": list(self.structural_check.passed_checks),
                 "failed_checks": list(self.structural_check.failed_checks),
                 "warnings": list(self.structural_check.warnings),
-            },
-            "compile_verification": None,
-            "warnings": list(self.warnings),
-        }
+            }
         if self.compile_verification is not None:
             payload["compile_verification"] = {
                 "overall_status": self.compile_verification.overall_status,
