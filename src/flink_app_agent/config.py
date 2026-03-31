@@ -21,6 +21,7 @@ from .llm import ProviderCallable
 EXTRACTOR_ENV_VAR = "FLINK_AGENT_EXTRACTOR"
 PROVIDER_ENTRY_POINT_ENV_VAR = "FLINK_AGENT_PROVIDER_ENTRY_POINT"
 FALLBACK_ENV_VAR = "FLINK_AGENT_FALLBACK"
+AMBIGUITY_POLICY_ENV_VAR = "FLINK_AGENT_AMBIGUITY_POLICY"
 
 VALID_EXTRACTOR_MODES = ("deterministic", "provider")
 VALID_FALLBACK_POLICIES = ("fail", "deterministic")
@@ -38,6 +39,7 @@ class ExtractorConfig:
 
     mode: str
     fallback: str = DEFAULT_FALLBACK_POLICY
+    ambiguity_policy: str = "fail"
     call_provider: ProviderCallable | None = None
 
 
@@ -53,6 +55,12 @@ class ExtractionOutcome:
     fallback_reason: str | None = None
     provider_error: str | None = None
     provider_status: str | None = None
+    ambiguity_status: str = "clear"
+    ambiguity_policy: str = "fail"
+    ambiguity_policy_result: str = "clear"
+    ambiguity_issue_codes: tuple[str, ...] = ()
+    ambiguity_warning: str | None = None
+    injected_defaults: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
 
@@ -60,6 +68,7 @@ class ExtractionOutcome:
 def resolve_extractor_config(
     cli_extractor: str | None = None,
     cli_fallback: str | None = None,
+    cli_ambiguity_policy: str | None = None,
 ) -> ExtractorConfig:
     """Resolve the effective extractor configuration.
 
@@ -68,6 +77,9 @@ def resolve_extractor_config(
             Takes precedence over environment variables when not None.
         cli_fallback: Explicit fallback policy from the CLI ``--fallback`` flag.
             Takes precedence over environment variables when not None.
+        cli_ambiguity_policy: Explicit ambiguity policy from the CLI
+            ``--ambiguity-policy`` flag. Takes precedence over environment
+            variables when not None.
 
     Returns:
         A resolved ``ExtractorConfig`` ready for use.
@@ -78,11 +90,17 @@ def resolve_extractor_config(
     """
     mode = _resolve_mode(cli_extractor)
     fallback = _resolve_fallback(cli_fallback)
+    ambiguity_policy = _resolve_ambiguity_policy(cli_ambiguity_policy)
     if mode == "deterministic":
-        return ExtractorConfig(mode=mode, fallback=fallback)
+        return ExtractorConfig(
+            mode=mode,
+            fallback=fallback,
+            ambiguity_policy=ambiguity_policy,
+        )
     return ExtractorConfig(
         mode=mode,
         fallback=fallback,
+        ambiguity_policy=ambiguity_policy,
         call_provider=_load_provider_callable(),
     )
 
@@ -113,6 +131,29 @@ def _resolve_fallback(cli_fallback: str | None) -> str:
         raise ConfigurationError(
             f"Invalid fallback policy '{policy}'. "
             f"Must be one of: {', '.join(VALID_FALLBACK_POLICIES)}."
+        )
+    return policy
+
+
+def _resolve_ambiguity_policy(cli_ambiguity_policy: str | None) -> str:
+    """Determine the effective ambiguity policy."""
+    from .ambiguity_policy import (
+        DEFAULT_AMBIGUITY_POLICY,
+        VALID_AMBIGUITY_POLICIES,
+    )
+
+    if cli_ambiguity_policy is not None:
+        policy = cli_ambiguity_policy
+    else:
+        policy = os.environ.get(
+            AMBIGUITY_POLICY_ENV_VAR,
+            DEFAULT_AMBIGUITY_POLICY,
+        )
+
+    if policy not in VALID_AMBIGUITY_POLICIES:
+        raise ConfigurationError(
+            f"Invalid ambiguity policy '{policy}'. "
+            f"Must be one of: {', '.join(VALID_AMBIGUITY_POLICIES)}."
         )
     return policy
 

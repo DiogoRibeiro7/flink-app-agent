@@ -68,6 +68,11 @@ def test_generation_report_file_is_created_with_key_fields(tmp_path: Path) -> No
     assert payload["extraction_outcome"]["fallback_policy"] == "fail"
     assert payload["extraction_outcome"]["actual_path"] == ["deterministic"]
     assert payload["extraction_outcome"]["fallback_occurred"] is False
+    assert payload["extraction_outcome"]["ambiguity_status"] == "clear"
+    assert payload["extraction_outcome"]["ambiguity_policy"] == "fail"
+    assert payload["extraction_outcome"]["ambiguity_policy_result"] == "clear"
+    assert payload["extraction_outcome"]["ambiguity_issue_codes"] == []
+    assert payload["extraction_outcome"]["injected_defaults"] == []
     assert payload["extraction_outcome"]["warnings"] == []
     assert payload["extraction_outcome"]["errors"] == []
     assert "provider_status" not in payload["extraction_outcome"]
@@ -102,13 +107,20 @@ def test_deterministic_extraction_report_content_is_compact_and_stable() -> None
         "fallback_policy": "fail",
         "actual_path": ["deterministic"],
         "fallback_occurred": False,
+        "ambiguity_status": "clear",
+        "ambiguity_policy": "fail",
+        "ambiguity_policy_result": "clear",
+        "ambiguity_issue_codes": [],
+        "injected_defaults": [],
         "warnings": [],
         "errors": [],
     }
     assert json.dumps(extraction_payload) == (
         '{"selected_mode": "deterministic", "fallback_policy": "fail", '
         '"actual_path": ["deterministic"], "fallback_occurred": false, '
-        '"warnings": [], "errors": []}'
+        '"ambiguity_status": "clear", "ambiguity_policy": "fail", '
+        '"ambiguity_policy_result": "clear", "ambiguity_issue_codes": [], '
+        '"injected_defaults": [], "warnings": [], "errors": []}'
     )
 
 
@@ -159,6 +171,11 @@ def test_provider_backed_extraction_report_content() -> None:
         "actual_path": ["provider"],
         "fallback_occurred": False,
         "provider_status": "available",
+        "ambiguity_status": "clear",
+        "ambiguity_policy": "fail",
+        "ambiguity_policy_result": "clear",
+        "ambiguity_issue_codes": [],
+        "injected_defaults": [],
         "warnings": [],
         "errors": [],
     }
@@ -198,8 +215,51 @@ def test_fallback_extraction_report_content() -> None:
     assert extraction_payload["actual_path"] == ["provider", "deterministic"]
     assert extraction_payload["fallback_occurred"] is True
     assert extraction_payload["provider_status"] == "unavailable"
+    assert extraction_payload["ambiguity_status"] == "clear"
+    assert extraction_payload["ambiguity_policy"] == "fail"
+    assert extraction_payload["ambiguity_policy_result"] == "clear"
+    assert extraction_payload["ambiguity_issue_codes"] == []
+    assert extraction_payload["injected_defaults"] == []
     assert extraction_payload["warnings"] == [
         "Provider extraction failed; deterministic fallback was used.",
     ]
     assert len(extraction_payload["errors"]) == 1
     assert "ProviderExtractionError: Provider call failed: provider unreachable" in extraction_payload["errors"][0]
+
+
+def test_minor_ambiguity_report_content_reflects_policy_and_defaults() -> None:
+    """A report should show when the ambiguity policy injected a safe default."""
+    request = "Read from Kafka payments, key by account_id, emit Alert within 10 minutes"
+    spec, extraction_outcome = parse_request(
+        request,
+        extractor_config=ExtractorConfig(
+            mode="deterministic",
+            ambiguity_policy="minor_defaults",
+        ),
+    )
+
+    report = GenerationReport.from_run(
+        request_text=request,
+        spec=spec,
+        selected_template="flink_kafka_rule_job",
+        output_directory=Path("out"),
+        generated_files=[],
+        extraction_outcome=extraction_outcome,
+        repair_result=None,
+        review_result=ReviewResult().finalize(),
+        verification_result=None,
+    )
+
+    assert report.to_dict()["extraction_outcome"] == {
+        "selected_mode": "deterministic",
+        "fallback_policy": "fail",
+        "actual_path": ["deterministic"],
+        "fallback_occurred": False,
+        "ambiguity_status": "minor",
+        "ambiguity_policy": "minor_defaults",
+        "ambiguity_policy_result": "used_safe_defaults",
+        "ambiguity_issue_codes": ["missing_sink_topic"],
+        "injected_defaults": ["sink_topic"],
+        "warnings": ["Applied safe default for sink_topic: inferred-events"],
+        "errors": [],
+    }

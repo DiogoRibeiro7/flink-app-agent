@@ -45,6 +45,29 @@ class AmbiguityAssessment:
         }
 
 
+class AmbiguousRequestError(ValueError):
+    """Raised when a candidate payload remains ambiguous before validation."""
+
+    def __init__(
+        self,
+        assessment: AmbiguityAssessment,
+        policy_name: str | None = None,
+        policy_result: str | None = None,
+    ) -> None:
+        """Store the structured ambiguity assessment and policy decision."""
+        self.assessment = assessment
+        self.policy_name = policy_name
+        self.policy_result = policy_result
+        codes = ", ".join(issue.code for issue in assessment.issues)
+        detail = f"Ambiguous request: {codes}"
+        if policy_name is not None:
+            detail = f"{detail} (policy={policy_name}"
+            if policy_result is not None:
+                detail = f"{detail}, result={policy_result}"
+            detail = f"{detail})"
+        super().__init__(detail)
+
+
 @dataclass(frozen=True)
 class CandidateAmbiguityAssessor:
     """Assess ambiguity before a candidate becomes a validated final spec."""

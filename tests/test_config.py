@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from flink_app_agent.config import (
+    AMBIGUITY_POLICY_ENV_VAR,
     EXTRACTOR_ENV_VAR,
     PROVIDER_ENTRY_POINT_ENV_VAR,
     ConfigurationError,
@@ -24,6 +25,7 @@ def test_default_mode_is_deterministic() -> None:
     config = resolve_extractor_config(cli_extractor=None)
 
     assert config.mode == "deterministic"
+    assert config.ambiguity_policy == "fail"
     assert config.call_provider is None
 
 
@@ -32,6 +34,7 @@ def test_cli_flag_selects_deterministic() -> None:
     config = resolve_extractor_config(cli_extractor="deterministic")
 
     assert config.mode == "deterministic"
+    assert config.ambiguity_policy == "fail"
     assert config.call_provider is None
 
 
@@ -65,6 +68,28 @@ def test_invalid_mode_from_cli_fails() -> None:
     """An unrecognized mode from the CLI should fail clearly."""
     with pytest.raises(ConfigurationError, match="Invalid extractor mode"):
         resolve_extractor_config(cli_extractor="magic")
+
+
+def test_cli_ambiguity_policy_overrides_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CLI ambiguity policy flag should take precedence over the environment."""
+    monkeypatch.setenv(AMBIGUITY_POLICY_ENV_VAR, "fail")
+
+    config = resolve_extractor_config(
+        cli_extractor="deterministic",
+        cli_ambiguity_policy="minor_defaults",
+    )
+
+    assert config.ambiguity_policy == "minor_defaults"
+
+
+def test_invalid_ambiguity_policy_from_env_var_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An invalid ambiguity policy from the environment should fail clearly."""
+    monkeypatch.setenv(AMBIGUITY_POLICY_ENV_VAR, "magic")
+
+    with pytest.raises(ConfigurationError, match="Invalid ambiguity policy"):
+        resolve_extractor_config(cli_extractor="deterministic")
 
 
 def test_provider_mode_without_entry_point_fails(monkeypatch: pytest.MonkeyPatch) -> None:
