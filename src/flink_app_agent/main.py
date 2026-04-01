@@ -156,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         ValueError,
     ) as exc:
         print(_format_cli_error(exc), file=sys.stderr)
+        _print_clarification_questions(exc)
         return 1
     except Exception as exc:
         print(f"Unexpected error: {exc}", file=sys.stderr)
@@ -569,6 +570,16 @@ def _format_cli_error(exc: Exception) -> str:
     if category == REQUEST_CATEGORY_INVALID:
         return f"Invalid request: {exc}"
     return f"Error: {exc}"
+
+
+def _print_clarification_questions(exc: Exception) -> None:
+    """Print clarification questions for ambiguous failures when available."""
+    questions = getattr(exc, "clarification_questions", ())
+    if not questions:
+        return
+    print("Clarifications needed:", file=sys.stderr)
+    for item in questions:
+        print(f"- {item.question}", file=sys.stderr)
 
 
 def _classify_request_error(exc: Exception) -> str | None:
