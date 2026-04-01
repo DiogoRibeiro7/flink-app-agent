@@ -7,12 +7,22 @@ import sys
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from flink_app_agent.ambiguity import AmbiguityAssessment, AmbiguityIssue, AmbiguousRequestError
 from flink_app_agent.config import PROVIDER_ENTRY_POINT_ENV_VAR
-from flink_app_agent.main import main
+from flink_app_agent.llm import SpecParsingError
+from flink_app_agent.main import _classify_request_error, main
+from flink_app_agent.request_taxonomy import (
+    REQUEST_CATEGORY_AMBIGUOUS,
+    REQUEST_CATEGORY_INVALID,
+    REQUEST_CATEGORY_UNSUPPORTED,
+    UnsupportedRequestError,
+)
 from flink_app_agent.report import REPORT_FILENAME
+from flink_app_agent.spec import FlinkJobSpec
 
 
 def test_main_generates_project_and_prints_summary(
@@ -435,3 +445,42 @@ def test_main_unsupported_request_uses_explicit_taxonomy(capsys) -> None:
     assert exit_code == 1
     assert "Unsupported request:" in captured.err
     assert "joins are not supported" in captured.err
+
+
+def test_request_error_categories_are_classified_consistently() -> None:
+    """Shared request errors should expose the same category labels as the CLI."""
+    invalid_error = SpecParsingError("source_topic is required")
+    ambiguous_error = AmbiguousRequestError(
+        AmbiguityAssessment(
+            issues=(
+                AmbiguityIssue(
+                    code="missing_key_field",
+                    message="The request does not identify a key field.",
+                ),
+            ),
+        )
+    )
+    unsupported_error = UnsupportedRequestError("joins are not supported")
+    with pytest.raises(ValidationError) as validation_error_info:
+        FlinkJobSpec.model_validate(
+            {
+                "job_family": "keyed_temporal_rule",
+                "job_name": "broken-job",
+                "source_topic": "",
+                "sink_topic": "alerts",
+                "key_by": "account_id",
+                "event_time_field": "ts",
+                "input_event_name": "InputEvent",
+                "output_event_name": "Alert",
+                "rule_type": "two_events_within_window",
+                "rule_condition": "emit alert within 10 minutes",
+                "time_window_minutes": 10,
+            }
+        )
+
+    assert invalid_error.request_category == REQUEST_CATEGORY_INVALID
+    assert unsupported_error.request_category == REQUEST_CATEGORY_UNSUPPORTED
+    assert _classify_request_error(invalid_error) == REQUEST_CATEGORY_INVALID
+    assert _classify_request_error(ambiguous_error) == REQUEST_CATEGORY_AMBIGUOUS
+    assert _classify_request_error(unsupported_error) == REQUEST_CATEGORY_UNSUPPORTED
+    assert _classify_request_error(validation_error_info.value) == REQUEST_CATEGORY_INVALID
