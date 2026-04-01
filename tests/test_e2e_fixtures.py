@@ -16,6 +16,7 @@ from flink_app_agent.constants import ProviderExtractionError
 from flink_app_agent.llm import SpecParsingError
 from flink_app_agent.main import build_generation_context, generate_project, review_project, write_report
 from flink_app_agent.report import REPORT_FILENAME
+from flink_app_agent.request_taxonomy import UnsupportedRequestError
 
 
 FIXTURES_PATH = Path(__file__).resolve().parent / "fixtures" / "end_to_end_requests.json"
@@ -150,7 +151,7 @@ def test_invalid_request_fixtures_fail_clearly(fixture: dict[str, object], tmp_p
     expected_error = str(fixture["expected_error"])
     output_dir = tmp_path / str(fixture["name"])
 
-    with pytest.raises((SpecParsingError, ValueError), match=expected_error):
+    with pytest.raises((SpecParsingError, UnsupportedRequestError, ValueError), match=expected_error):
         build_generation_context(request, output_dir)
 
 
@@ -217,7 +218,7 @@ def test_provider_backed_request_fixtures_fail_without_misleading_report(
     expected_error = str(fixture["expected_error"])
     output_dir = tmp_path / str(fixture["name"])
 
-    with pytest.raises((ProviderExtractionError, SpecParsingError, ValueError), match=expected_error):
+    with pytest.raises((ProviderExtractionError, SpecParsingError, UnsupportedRequestError, ValueError), match=expected_error):
         _run_generation_pipeline(
             request=request,
             output_dir=output_dir,

@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from .ambiguity import AmbiguousRequestError
 from .ambiguity_policy import AmbiguityPolicy
 from .config import (
@@ -32,6 +34,13 @@ from .provider_quality import (
     PROVIDER_QUALITY_AMBIGUOUS,
     PROVIDER_QUALITY_UNUSABLE,
     ProviderPayloadQualityGate,
+)
+from .request_taxonomy import (
+    REQUEST_CATEGORY_AMBIGUOUS,
+    REQUEST_CATEGORY_INVALID,
+    REQUEST_CATEGORY_SUPPORTED,
+    REQUEST_CATEGORY_UNSUPPORTED,
+    UnsupportedRequestError,
 )
 from .repair import DeterministicRepairer, RepairResult
 from .report import GenerationReport, write_generation_report
@@ -134,8 +143,19 @@ def main(argv: list[str] | None = None) -> int:
         if context.review_result is not None and not context.review_result.success:
             return 1
         return 0
-    except (FileNotFoundError, NotADirectoryError, FileExistsError, SpecParsingError, AmbiguousRequestError, ProviderExtractionError, ConfigurationError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except (
+        FileNotFoundError,
+        NotADirectoryError,
+        FileExistsError,
+        SpecParsingError,
+        AmbiguousRequestError,
+        UnsupportedRequestError,
+        ProviderExtractionError,
+        ConfigurationError,
+        ValidationError,
+        ValueError,
+    ) as exc:
+        print(_format_cli_error(exc), file=sys.stderr)
         return 1
     except Exception as exc:
         print(f"Unexpected error: {exc}", file=sys.stderr)
@@ -162,6 +182,7 @@ def parse_request(
                 requested_mode=config.mode,
                 fallback_policy=config.fallback,
                 extractor_used="deterministic",
+                request_category=REQUEST_CATEGORY_SUPPORTED,
                 actual_path=("deterministic",),
                 ambiguity_policy=config.ambiguity_policy,
             ),
@@ -192,6 +213,7 @@ def parse_request(
                 requested_mode="provider",
                 fallback_policy=config.fallback,
                 extractor_used="provider",
+                request_category=REQUEST_CATEGORY_SUPPORTED,
                 actual_path=("provider",),
                 provider_status="available",
                 provider_quality=quality.category,
@@ -229,6 +251,7 @@ def parse_request(
                 requested_mode="provider",
                 fallback_policy="deterministic",
                 extractor_used="deterministic",
+                request_category=REQUEST_CATEGORY_SUPPORTED,
                 actual_path=("provider", "deterministic"),
                 fallback_triggered=True,
                 fallback_reason=f"{error_type}: {error_message}",
@@ -303,6 +326,7 @@ def _finalize_analysis_with_policy(
         requested_mode=extraction_outcome.requested_mode,
         fallback_policy=extraction_outcome.fallback_policy,
         extractor_used=extraction_outcome.extractor_used,
+        request_category=extraction_outcome.request_category,
         actual_path=extraction_outcome.actual_path,
         fallback_triggered=extraction_outcome.fallback_triggered,
         fallback_reason=extraction_outcome.fallback_reason,
@@ -457,6 +481,7 @@ def print_generation_summary(context: GenerationContext) -> None:
 
     outcome = context.extraction_outcome
     print(f"Requested extractor: {outcome.requested_mode}")
+    print(f"Request category: {outcome.request_category}")
     print(f"Extraction path: {_format_extraction_path(outcome.actual_path, outcome.extractor_used)}")
     print(f"Fallback occurred: {_format_bool(outcome.fallback_triggered)}")
     if outcome.fallback_triggered and outcome.fallback_reason is not None:
@@ -526,6 +551,17 @@ def _format_extraction_path(actual_path: tuple[str, ...], extractor_used: str) -
 def _format_bool(value: bool) -> str:
     """Render booleans in a short scripting-friendly form."""
     return "yes" if value else "no"
+
+
+def _format_cli_error(exc: Exception) -> str:
+    """Return a stable CLI error prefix for the shared request taxonomy."""
+    if isinstance(exc, AmbiguousRequestError):
+        return str(exc)
+    if isinstance(exc, UnsupportedRequestError):
+        return f"Unsupported request: {exc}"
+    if isinstance(exc, (SpecParsingError, ValidationError)):
+        return f"Invalid request: {exc}"
+    return f"Error: {exc}"
 
 
 if __name__ == "__main__":

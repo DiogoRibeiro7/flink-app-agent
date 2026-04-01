@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from .request_taxonomy import REQUEST_CATEGORY_AMBIGUOUS
 from .spec import JOB_FAMILY_KEYED_RULE, JOB_FAMILY_WINDOWED_AGGREGATION
 
 
@@ -58,6 +59,7 @@ class AmbiguousRequestError(ValueError):
         self.assessment = assessment
         self.policy_name = policy_name
         self.policy_result = policy_result
+        self.request_category = REQUEST_CATEGORY_AMBIGUOUS
         codes = ", ".join(issue.code for issue in assessment.issues)
         detail = f"Ambiguous request: {codes}"
         if policy_name is not None:

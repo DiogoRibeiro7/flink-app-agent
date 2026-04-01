@@ -36,6 +36,7 @@ def test_main_generates_project_and_prints_summary(
     assert exit_code == 0
     assert "Parsed spec summary:" in captured.out
     assert "Requested extractor: deterministic" in captured.out
+    assert "Request category: supported" in captured.out
     assert "Extraction path: deterministic" in captured.out
     assert "Fallback occurred: no" in captured.out
     assert "Ambiguity status: clear" in captured.out
@@ -74,6 +75,7 @@ def test_main_generates_windowed_aggregation_project(tmp_path: Path, capsys) -> 
     assert "Job family: windowed_aggregation" in captured.out
     assert "Chosen template: flink_windowed_aggregation_job" in captured.out
     assert "Requested extractor: deterministic" in captured.out
+    assert "Request category: supported" in captured.out
     assert "Extraction path: deterministic" in captured.out
     assert "Fallback occurred: no" in captured.out
     assert "Ambiguity status: clear" in captured.out
@@ -154,7 +156,7 @@ def test_main_returns_non_zero_on_invalid_request(capsys) -> None:
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "Error:" in captured.err
+    assert "Invalid request:" in captured.err
     assert "source_topic" in captured.err
 
 
@@ -202,6 +204,7 @@ def test_main_major_ambiguity_fails_even_with_minor_defaults_policy(capsys) -> N
     captured = capsys.readouterr()
 
     assert exit_code == 1
+    assert "Ambiguous request:" in captured.err
     assert "policy=minor_defaults" in captured.err
     assert "failed_major" in captured.err
 
@@ -253,6 +256,7 @@ def test_main_provider_mode_prints_provider_path(
 
     assert exit_code == 0
     assert "Requested extractor: provider" in captured.out
+    assert "Request category: supported" in captured.out
     assert "Extraction path: provider" in captured.out
     assert "Fallback occurred: no" in captured.out
     assert "Provider quality: acceptable" in captured.out
@@ -296,6 +300,7 @@ def test_main_provider_fallback_prints_fallback_summary(
 
     assert exit_code == 0
     assert "Requested extractor: provider" in captured.out
+    assert "Request category: supported" in captured.out
     assert "Extraction path: provider -> deterministic" in captured.out
     assert "Fallback occurred: yes" in captured.out
     assert "Provider quality: unusable" in captured.out
@@ -354,3 +359,21 @@ def test_main_provider_quality_ambiguous_is_visible(
     assert "Provider quality: ambiguous" in captured.out
     assert "Provider quality summary: Provider output remains ambiguous after normalization: missing_sink_topic" in captured.out
     assert "Ambiguity result: used_safe_defaults" in captured.out
+
+
+def test_main_unsupported_request_uses_explicit_taxonomy(capsys) -> None:
+    """The CLI should distinguish unsupported requests from invalid parsing failures."""
+    exit_code = main(
+        [
+            "--request",
+            "Join payments with accounts by account_id within 10 minutes",
+            "--output",
+            "./out",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Unsupported request:" in captured.err
+    assert "joins are not supported" in captured.err
