@@ -66,6 +66,64 @@
       }
     },
     {
+      "name": "provider_missing_sink_uses_safe_default",
+      "request": "this request is ignored by the mocked provider",
+      "extractor": "provider",
+      "fallback": "fail",
+      "ambiguity_policy": "minor_defaults",
+      "provider_case": "missing_sink_topic",
+      "expected": {
+        "template_id": "flink_kafka_rule_job",
+        "job_family": "keyed_temporal_rule",
+        "source_topic": "payments",
+        "sink_topic": "inferred-events",
+        "output_event_name": "AlertEvent",
+        "extraction_outcome": {
+          "selected_mode": "provider",
+          "fallback_policy": "fail",
+          "actual_path": [
+            "provider"
+          ],
+          "fallback_occurred": false,
+          "provider_status": "available",
+          "provider_quality": "ambiguous",
+          "provider_quality_summary": "Provider output remains ambiguous after normalization: missing_sink_topic",
+          "provider_quality_findings": [
+            {
+              "code": "ambiguity_present",
+              "message": "Provider output remains ambiguous after normalization: missing_sink_topic",
+              "fields": []
+            }
+          ],
+          "interpretation_risk": "elevated",
+          "ambiguity_status": "minor",
+          "ambiguity_policy": "minor_defaults",
+          "ambiguity_policy_result": "used_safe_defaults",
+          "ambiguity_findings": [
+            {
+              "code": "missing_sink_topic",
+              "severity": "minor",
+              "message": "The request does not identify a sink topic.",
+              "fields": [
+                "sink_topic"
+              ]
+            }
+          ],
+          "defaults_injected": [
+            {
+              "field": "sink_topic",
+              "value": "inferred-events",
+              "reason": "safe default applied under the active ambiguity policy"
+            }
+          ],
+          "warnings": [
+            "Applied safe default for sink_topic: inferred-events"
+          ],
+          "errors": []
+        }
+      }
+    },
+    {
       "name": "provider_invalid_output_with_deterministic_fallback",
       "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
       "extractor": "provider",
@@ -104,6 +162,63 @@
           ]
         }
       }
+    },
+    {
+      "name": "provider_incomplete_payload_with_deterministic_fallback",
+      "request": "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+      "extractor": "provider",
+      "fallback": "deterministic",
+      "ambiguity_policy": "minor_defaults",
+      "provider_case": "missing_source_topic",
+      "expected": {
+        "template_id": "flink_kafka_rule_job",
+        "job_family": "keyed_temporal_rule",
+        "source_topic": "sensor-events",
+        "sink_topic": "inferred-events",
+        "output_event_name": "BedOut",
+        "extraction_outcome": {
+          "selected_mode": "provider",
+          "fallback_policy": "deterministic",
+          "actual_path": [
+            "provider",
+            "deterministic"
+          ],
+          "fallback_occurred": true,
+          "fallback_reason": "ProviderExtractionError: Provider output failed quality gate: Provider output is missing essential fields: source_topic",
+          "provider_status": "unavailable",
+          "provider_quality": "unusable",
+          "provider_quality_summary": "Provider output failed quality gate: Provider output is missing essential fields: source_topic",
+          "provider_quality_findings": [],
+          "interpretation_risk": "elevated",
+          "ambiguity_status": "minor",
+          "ambiguity_policy": "minor_defaults",
+          "ambiguity_policy_result": "used_safe_defaults",
+          "ambiguity_findings": [
+            {
+              "code": "missing_sink_topic",
+              "severity": "minor",
+              "message": "The request does not identify a sink topic.",
+              "fields": [
+                "sink_topic"
+              ]
+            }
+          ],
+          "defaults_injected": [
+            {
+              "field": "sink_topic",
+              "value": "inferred-events",
+              "reason": "safe default applied under the active ambiguity policy"
+            }
+          ],
+          "warnings": [
+            "Provider extraction failed; deterministic fallback was used.",
+            "Applied safe default for sink_topic: inferred-events"
+          ],
+          "errors": [
+            "ProviderExtractionError: Provider output failed quality gate: Provider output is missing essential fields: source_topic"
+          ]
+        }
+      }
     }
   ],
   "failing_requests": [
@@ -114,6 +229,14 @@
       "fallback": "fail",
       "provider_case": "invalid_json",
       "expected_error": "Provider returned invalid JSON"
+    },
+    {
+      "name": "provider_incomplete_payload_without_fallback",
+      "request": "this request is ignored by the mocked provider",
+      "extractor": "provider",
+      "fallback": "fail",
+      "provider_case": "missing_source_topic",
+      "expected_error": "missing essential fields: source_topic"
     }
   ]
 }

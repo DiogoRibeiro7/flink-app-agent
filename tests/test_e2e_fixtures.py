@@ -11,6 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from flink_app_agent.config import ExtractorConfig
+from flink_app_agent.ambiguity import AmbiguousRequestError
 from flink_app_agent.generator import build_main_class_name
 from flink_app_agent.constants import ProviderExtractionError
 from flink_app_agent.llm import SpecParsingError
@@ -31,6 +32,8 @@ def _load_fixture_pack() -> dict[str, list[dict[str, object]]]:
 FIXTURE_PACK = _load_fixture_pack()
 VALID_REQUESTS = FIXTURE_PACK["valid_requests"]
 INVALID_REQUESTS = FIXTURE_PACK["invalid_requests"]
+AMBIGUOUS_REQUESTS = FIXTURE_PACK["ambiguous_requests"]
+UNSUPPORTED_REQUESTS = FIXTURE_PACK["unsupported_requests"]
 
 
 def _load_provider_fixture_pack() -> dict[str, list[dict[str, object]]]:
@@ -67,9 +70,47 @@ def _provider_invalid_json(_: str, __: str) -> str:
     return "not json"
 
 
+def _provider_missing_sink_topic(_: str, __: str) -> str:
+    """Return an ambiguous but still usable provider payload."""
+    return json.dumps(
+        {
+            "job_family": "keyed_temporal_rule",
+            "job_name": "fraud-alert-job",
+            "source_topic": "payments",
+            "key_by": "account_id",
+            "event_time_field": "event_time",
+            "input_event_name": "InputEvent",
+            "output_event_name": "AlertEvent",
+            "rule_type": "two_events_within_window",
+            "rule_condition": "second payment within 10 minutes",
+            "time_window_minutes": 10,
+        }
+    )
+
+
+def _provider_missing_source_topic(_: str, __: str) -> str:
+    """Return an incomplete provider payload that should trigger deterministic fallback."""
+    return json.dumps(
+        {
+            "job_family": "keyed_temporal_rule",
+            "job_name": "fraud-alert-job",
+            "sink_topic": "alerts",
+            "key_by": "account_id",
+            "event_time_field": "event_time",
+            "input_event_name": "InputEvent",
+            "output_event_name": "AlertEvent",
+            "rule_type": "two_events_within_window",
+            "rule_condition": "second payment within 10 minutes",
+            "time_window_minutes": 10,
+        }
+    )
+
+
 PROVIDER_CASES = {
     "windowed_aggregation_success": _provider_windowed_aggregation_success,
     "invalid_json": _provider_invalid_json,
+    "missing_sink_topic": _provider_missing_sink_topic,
+    "missing_source_topic": _provider_missing_source_topic,
 }
 
 
@@ -80,6 +121,7 @@ def _build_extractor_config(fixture: dict[str, object]) -> ExtractorConfig:
     return ExtractorConfig(
         mode=str(fixture["extractor"]),
         fallback=str(fixture["fallback"]),
+        ambiguity_policy=str(fixture.get("ambiguity_policy", "fail")),
         call_provider=call_provider,
     )
 
@@ -151,8 +193,48 @@ def test_invalid_request_fixtures_fail_clearly(fixture: dict[str, object], tmp_p
     expected_error = str(fixture["expected_error"])
     output_dir = tmp_path / str(fixture["name"])
 
-    with pytest.raises((SpecParsingError, UnsupportedRequestError, ValueError), match=expected_error):
+    with pytest.raises((SpecParsingError, ValueError), match=expected_error):
         build_generation_context(request, output_dir)
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    AMBIGUOUS_REQUESTS,
+    ids=[item["name"] for item in AMBIGUOUS_REQUESTS],
+)
+def test_ambiguous_request_fixtures_fail_with_explicit_taxonomy(
+    fixture: dict[str, object],
+    tmp_path: Path,
+) -> None:
+    """Ambiguous request fixtures should fail with the dedicated ambiguity category."""
+    request = str(fixture["request"])
+    expected_error = str(fixture["expected_error"])
+    output_dir = tmp_path / str(fixture["name"])
+
+    with pytest.raises(AmbiguousRequestError, match=expected_error) as exc_info:
+        build_generation_context(request, output_dir)
+
+    assert exc_info.value.request_category == "ambiguous"
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    UNSUPPORTED_REQUESTS,
+    ids=[item["name"] for item in UNSUPPORTED_REQUESTS],
+)
+def test_unsupported_request_fixtures_fail_with_explicit_taxonomy(
+    fixture: dict[str, object],
+    tmp_path: Path,
+) -> None:
+    """Unsupported fixtures should not be masked as parse failures."""
+    request = str(fixture["request"])
+    expected_error = str(fixture["expected_error"])
+    output_dir = tmp_path / str(fixture["name"])
+
+    with pytest.raises(UnsupportedRequestError, match=expected_error) as exc_info:
+        build_generation_context(request, output_dir)
+
+    assert "not supported" in str(exc_info.value).lower()
 
 
 @pytest.mark.parametrize(
@@ -199,6 +281,7 @@ def test_provider_backed_request_fixtures_cover_full_generation_flow(
     assert readme_path.exists()
     assert job_path.exists()
     assert report_payload["pipeline_status"] == "passed"
+    assert report_payload["request_category"] == "supported"
     assert report_payload["selected_template"] == expected["template_id"]
     assert report_payload["parsed_spec_summary"]["source_topic"] == expected["source_topic"]
     assert report_payload["extraction_outcome"] == expected["extraction_outcome"]

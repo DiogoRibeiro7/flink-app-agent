@@ -77,7 +77,16 @@
       "name": "missing_time_window_for_aggregation",
       "request": "Read from Kafka sensor-events, key by device_id, count events, write to Kafka aggregated-events",
       "expected_error": "time_window_minutes"
-    },
+    }
+  ],
+  "ambiguous_requests": [
+    {
+      "name": "missing_key_field_for_rule",
+      "request": "Read from Kafka sensor-events, emit BED_OUT within 20 minutes, write to Kafka inferred-events",
+      "expected_error": "missing_key_field"
+    }
+  ],
+  "unsupported_requests": [
     {
       "name": "unsupported_join_request",
       "request": "Join payments with accounts by account_id within 10 minutes",
