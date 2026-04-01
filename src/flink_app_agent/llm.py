@@ -11,7 +11,7 @@ from typing import Any, Callable, Protocol
 from .ambiguity import AmbiguityAssessment, AmbiguousRequestError, CandidateAmbiguityAssessor
 from .constants import ProviderExtractionError
 from .provider_normalizer import normalize_provider_payload
-from .request_taxonomy import UnsupportedRequestError
+from .request_taxonomy import REQUEST_CATEGORY_INVALID, UnsupportedRequestError
 from .spec import (
     ALLOWED_RULE_TYPE,
     FlinkJobSpec,
@@ -28,6 +28,11 @@ EXTRACT_SPEC_PROMPT = "extract_spec.md"
 
 class SpecParsingError(ValueError):
     """Raised when a request does not match the supported deterministic patterns."""
+
+    def __init__(self, message: str) -> None:
+        """Store the explicit invalid category for shared error handling."""
+        self.request_category = REQUEST_CATEGORY_INVALID
+        super().__init__(message)
 
 
 class PromptRepository(Protocol):

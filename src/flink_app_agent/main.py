@@ -561,13 +561,28 @@ def _format_defaults(defaults: tuple[str, ...]) -> str:
 
 def _format_cli_error(exc: Exception) -> str:
     """Return a stable CLI error prefix for the shared request taxonomy."""
-    if isinstance(exc, AmbiguousRequestError):
+    category = _classify_request_error(exc)
+    if category == REQUEST_CATEGORY_AMBIGUOUS:
         return str(exc)
-    if isinstance(exc, UnsupportedRequestError):
+    if category == REQUEST_CATEGORY_UNSUPPORTED:
         return f"Unsupported request: {exc}"
-    if isinstance(exc, (SpecParsingError, ValidationError)):
+    if category == REQUEST_CATEGORY_INVALID:
         return f"Invalid request: {exc}"
     return f"Error: {exc}"
+
+
+def _classify_request_error(exc: Exception) -> str | None:
+    """Return the shared request category for a known extraction/validation error."""
+    category = getattr(exc, "request_category", None)
+    if category in {
+        REQUEST_CATEGORY_INVALID,
+        REQUEST_CATEGORY_AMBIGUOUS,
+        REQUEST_CATEGORY_UNSUPPORTED,
+    }:
+        return category
+    if isinstance(exc, ValidationError):
+        return REQUEST_CATEGORY_INVALID
+    return None
 
 
 if __name__ == "__main__":
