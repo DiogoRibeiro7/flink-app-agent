@@ -33,19 +33,23 @@ The current pipeline is:
 
 1. `main.py` parses CLI arguments
 2. `llm.py` preprocesses the request, loads the extraction prompt, and runs either the deterministic extractor or the optional provider-backed extractor
-3. provider-backed payloads are normalized in `provider_normalizer.py`, then all payloads go through the same `spec.py` validation path
-4. `template_registry.py` resolves the local template for the spec
-5. `generator.py` copies the template, renders placeholders in safe text files, and returns generated paths
-6. `repair.py` runs a deterministic repair loop for safe fixups
-7. `review.py` runs lightweight file-based structural checks on the generated project
-8. `verification.py` optionally runs `mvn compile` on the generated project (with `--verify`)
-9. `report.py` writes `generation_report.json` with full pipeline status and extraction provenance
-10. `main.py` prints a concise summary
+3. extracted payloads go through explicit request taxonomy, provider quality gating when relevant, ambiguity assessment, and ambiguity policy handling before final validation
+4. provider-backed payloads are normalized in `provider_normalizer.py`, then all payloads go through the same `spec.py` validation path
+5. `template_registry.py` resolves the local template for the spec
+6. `generator.py` copies the template, renders placeholders in safe text files, and returns generated paths
+7. `repair.py` runs a deterministic repair loop for safe fixups
+8. `review.py` runs lightweight file-based structural checks on the generated project
+9. `verification.py` optionally runs `mvn compile` on the generated project (with `--verify`)
+10. `report.py` writes `generation_report.json` with full pipeline status and extraction provenance
+11. `main.py` prints a concise summary
 
 Deeper implementation notes live in:
 
 - [Architecture](docs/architecture.md)
+- [Ambiguity Handling](docs/ambiguity.md)
+- [Defaults And Normalization](docs/defaults.md)
 - [Extraction Modes](docs/extraction.md)
+- [Interpretation Provenance](docs/provenance.md)
 - [Provider Extraction Boundary](docs/provider.md)
 - [Spec Model](docs/spec.md)
 - [Templates](docs/templates.md)
@@ -59,8 +63,11 @@ flink-app-agent/
 ├── ROADMAP.md
 ├── docs/
 │   ├── architecture.md
+│   ├── ambiguity.md
+│   ├── defaults.md
 │   ├── extraction.md
 │   ├── provider.md
+│   ├── provenance.md
 │   ├── review.md
 │   ├── spec.md
 │   └── templates.md
@@ -100,7 +107,7 @@ Run the default generation flow:
 
 ```bash
 poetry run flink-app-agent \
-  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events" \
   --output ./out
 ```
 
@@ -109,7 +116,7 @@ Run with the optional provider-backed extraction path:
 ```bash
 export FLINK_AGENT_PROVIDER_ENTRY_POINT="my_provider:call_provider"
 poetry run flink-app-agent \
-  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events" \
   --output ./out \
   --extractor provider
 ```
@@ -119,17 +126,26 @@ Allow deterministic fallback if provider extraction fails:
 ```bash
 export FLINK_AGENT_PROVIDER_ENTRY_POINT="my_provider:call_provider"
 poetry run flink-app-agent \
-  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events" \
   --output ./out \
   --extractor provider \
   --fallback deterministic
+```
+
+Allow explicit safe defaults for low-risk ambiguity only:
+
+```bash
+poetry run flink-app-agent \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --output ./out \
+  --ambiguity-policy minor_defaults
 ```
 
 Run with optional compile verification (requires Maven on PATH):
 
 ```bash
 poetry run flink-app-agent \
-  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events" \
   --output ./out \
   --verify
 ```
@@ -138,20 +154,20 @@ Useful inspection-only modes:
 
 ```bash
 poetry run flink-app-agent \
-  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events" \
   --print-spec-only
 ```
 
 ```bash
 poetry run flink-app-agent \
-  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes" \
+  --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events" \
   --print-template-info
 ```
 
 ## Example Request
 
 ```text
-Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes
+Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events
 ```
 
 Also supported in the current narrow scope:
@@ -199,24 +215,52 @@ Parsed spec summary:
 }
 
 Requested extractor: deterministic
+Request category: supported
 Extraction path: deterministic
 Fallback occurred: no
+Ambiguity status: clear
+Ambiguity policy: fail
+Ambiguity result: clear
+Injected defaults: no
 Job family: keyed_temporal_rule
 Chosen template: flink_kafka_rule_job
 Generation target: out
 Generated files count: 7
 Generation report: out\generation_report.json
 Repair pass: 1 passes, 0 repairs
-Structural review summary: passed, 10 passed, 0 failed, 0 warnings
+Structural review summary: passed, 12 passed, 0 failed, 0 warnings
 ```
 
 If provider-backed extraction is selected, the summary also shows the requested mode and the actual path used. A fallback run looks like:
 
 ```text
 Requested extractor: provider
+Request category: supported
 Extraction path: provider -> deterministic
 Fallback occurred: yes
 Fallback reason: ProviderExtractionError: Provider returned invalid JSON: ...
+```
+
+If a run continues under the low-risk ambiguity policy, the summary makes that explicit:
+
+```text
+Requested extractor: deterministic
+Request category: supported
+Extraction path: deterministic
+Fallback occurred: no
+Ambiguity status: minor
+Ambiguity policy: minor_defaults
+Ambiguity result: used_safe_defaults
+Injected defaults: sink_topic
+- EXTRACTION WARN: Applied safe default for sink_topic: inferred-events
+```
+
+If the request cannot be interpreted safely, the CLI uses explicit failure categories:
+
+```text
+Invalid request: source_topic
+Ambiguous request: missing_key_field (policy=fail, result=failed)
+Unsupported request: joins are not supported
 ```
 
 Example generated project shape:
@@ -250,10 +294,11 @@ Current limitations are explicit:
 - only two supported rule types
 - deterministic parsing is still pattern-based and remains the default
 - provider-backed extraction is optional and only supported through an injected callable boundary
-- provider-backed output is accepted only if it survives normalization and strict spec validation
+- provider-backed output is accepted only if it survives normalization, quality gating, ambiguity handling, and strict spec validation
 - fallback is limited to deterministic extraction when explicitly configured
+- ambiguity is handled explicitly, but not solved interactively
 - repairs are intentionally limited to safe text cleanup only (no model-based patching)
-- some fields are filled through fixed defaults rather than user-controlled extraction
+- safe defaults are narrow, policy-controlled, and always reported
 - no joins, enrichment, or sessionization families yet
 
 ## Roadmap

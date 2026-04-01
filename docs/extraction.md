@@ -33,8 +33,10 @@ Provider mode does not bypass internal validation. The path is:
 3. call the injected provider callable
 4. parse the provider response as JSON
 5. normalize the payload through `provider_normalizer.py`
-6. validate the normalized payload through `spec.py`
-7. continue with template selection and generation
+6. run provider quality gating and ambiguity assessment
+7. apply the configured ambiguity policy
+8. validate the normalized payload through `spec.py`
+9. continue with template selection and generation
 
 If any of those steps fail, the run fails explicitly unless fallback is configured.
 
@@ -70,9 +72,13 @@ The extraction controls are intentionally small:
 The CLI summary reports:
 
 - requested extractor
+- request category
 - actual extraction path
 - whether fallback occurred
 - fallback reason when fallback was triggered
+- ambiguity status
+- ambiguity policy result
+- whether defaults were injected
 
 ## What Provider Mode Does Not Mean
 
@@ -83,5 +89,7 @@ It still operates within the same constraints:
 - one strict `FlinkJobSpec`
 - two supported job families
 - local template selection
+- explicit invalid vs ambiguous vs unsupported taxonomy
+- explicit ambiguity handling before final validation
 - deterministic repair and review stages
 - machine-readable local report artifact
