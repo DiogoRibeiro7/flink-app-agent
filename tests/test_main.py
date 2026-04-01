@@ -42,6 +42,7 @@ def test_main_generates_project_and_prints_summary(
     assert "Ambiguity status: clear" in captured.out
     assert "Ambiguity policy: fail" in captured.out
     assert "Ambiguity result: clear" in captured.out
+    assert "Injected defaults: no" in captured.out
     assert "Job family: keyed_temporal_rule" in captured.out
     assert "Chosen template: flink_kafka_rule_job" in captured.out
     assert f"Generation target: {output_dir}" in captured.out
@@ -79,6 +80,7 @@ def test_main_generates_windowed_aggregation_project(tmp_path: Path, capsys) -> 
     assert "Extraction path: deterministic" in captured.out
     assert "Fallback occurred: no" in captured.out
     assert "Ambiguity status: clear" in captured.out
+    assert "Injected defaults: no" in captured.out
     assert f"Generation report: {output_dir / REPORT_FILENAME}" in captured.out
     assert (output_dir / REPORT_FILENAME).exists()
 
@@ -306,6 +308,62 @@ def test_main_provider_fallback_prints_fallback_summary(
     assert "Provider quality: unusable" in captured.out
     assert "Fallback reason: ProviderExtractionError: Provider call failed: provider unreachable" in captured.out
     assert "Ambiguity policy: fail" in captured.out
+    assert "Provider extraction failed, falling back to deterministic:" in captured.err
+
+
+def test_main_provider_fallback_with_minor_defaults_surfaces_trust_signals(
+    tmp_path: Path,
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI should show fallback, defaults, and warnings together when they occur."""
+    provider_module = tmp_path / "cli_provider_fallback_defaults.py"
+    provider_module.write_text(
+        textwrap.dedent("""\
+            def call_provider(request: str, prompt: str) -> str:
+                raise ConnectionError("provider unreachable")
+        """),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setenv(
+        PROVIDER_ENTRY_POINT_ENV_VAR,
+        "cli_provider_fallback_defaults:call_provider",
+    )
+
+    output_dir = tmp_path / "provider-fallback-defaults-generated"
+    exit_code = main(
+        [
+            "--request",
+            "Read from Kafka payments, key by account_id, emit Alert within 10 minutes",
+            "--output",
+            str(output_dir),
+            "--extractor",
+            "provider",
+            "--fallback",
+            "deterministic",
+            "--ambiguity-policy",
+            "minor_defaults",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Requested extractor: provider" in captured.out
+    assert "Extraction path: provider -> deterministic" in captured.out
+    assert "Fallback occurred: yes" in captured.out
+    assert "Injected defaults: sink_topic" in captured.out
+    assert "Ambiguity status: minor" in captured.out
+    assert "Ambiguity result: used_safe_defaults" in captured.out
+    assert (
+        "- EXTRACTION WARN: Applied safe default for sink_topic: inferred-events"
+        in captured.out
+    )
+    assert (
+        "Fallback reason: ProviderExtractionError: Provider call failed: provider unreachable"
+        in captured.out
+    )
     assert "Provider extraction failed, falling back to deterministic:" in captured.err
 
 

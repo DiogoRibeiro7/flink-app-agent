@@ -493,8 +493,7 @@ def print_generation_summary(context: GenerationContext) -> None:
     print(f"Ambiguity status: {outcome.ambiguity_status}")
     print(f"Ambiguity policy: {outcome.ambiguity_policy}")
     print(f"Ambiguity result: {outcome.ambiguity_policy_result}")
-    if outcome.injected_defaults:
-        print(f"Injected defaults: {', '.join(outcome.injected_defaults)}")
+    print(f"Injected defaults: {_format_defaults(outcome.injected_defaults)}")
     for item in outcome.warnings:
         print(f"- EXTRACTION WARN: {item}")
     print(f"Job family: {context.spec.job_family}")
@@ -551,6 +550,13 @@ def _format_extraction_path(actual_path: tuple[str, ...], extractor_used: str) -
 def _format_bool(value: bool) -> str:
     """Render booleans in a short scripting-friendly form."""
     return "yes" if value else "no"
+
+
+def _format_defaults(defaults: tuple[str, ...]) -> str:
+    """Render injected defaults in a stable, scripting-friendly form."""
+    if not defaults:
+        return "no"
+    return ", ".join(defaults)
 
 
 def _format_cli_error(exc: Exception) -> str:
