@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .ambiguity import AmbiguityAssessment, AmbiguityIssue, AmbiguousRequestError
+from .clarification import build_clarification_questions
 from .spec import JOB_FAMILY_KEYED_RULE, JOB_FAMILY_WINDOWED_AGGREGATION
 
 MINOR_AMBIGUITY_POLICY = "minor_defaults"
@@ -70,6 +71,7 @@ class AmbiguityPolicy:
                 assessment=assessment,
                 policy_name=self.name,
                 policy_result="failed",
+                clarification_questions=build_clarification_questions(assessment, payload),
             )
 
         if classification == MAJOR_SEVERITY:
@@ -77,6 +79,7 @@ class AmbiguityPolicy:
                 assessment=assessment,
                 policy_name=self.name,
                 policy_result="failed_major",
+                clarification_questions=build_clarification_questions(assessment, payload),
             )
 
         applied_defaults = _resolve_minor_defaults(classified_issues, payload)

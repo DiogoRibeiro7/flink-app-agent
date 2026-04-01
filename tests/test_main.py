@@ -219,6 +219,8 @@ def test_main_major_ambiguity_fails_even_with_minor_defaults_policy(capsys) -> N
     assert "Ambiguous request:" in captured.err
     assert "policy=minor_defaults" in captured.err
     assert "failed_major" in captured.err
+    assert "Clarifications needed:" in captured.err
+    assert "Which field should the stream be keyed by?" in captured.err
 
 
 def test_main_provider_mode_prints_provider_path(
@@ -445,6 +447,25 @@ def test_main_unsupported_request_uses_explicit_taxonomy(capsys) -> None:
     assert exit_code == 1
     assert "Unsupported request:" in captured.err
     assert "joins are not supported" in captured.err
+
+
+def test_main_fail_policy_prints_clarification_questions_for_ambiguity(capsys) -> None:
+    """Fail-on-ambiguity output should include narrow clarification questions."""
+    exit_code = main(
+        [
+            "--request",
+            "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes",
+            "--output",
+            "./out",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Ambiguous request: missing_sink_topic" in captured.err
+    assert "Clarifications needed:" in captured.err
+    assert "Which Kafka topic should receive the inferred events?" in captured.err
 
 
 def test_request_error_categories_are_classified_consistently() -> None:

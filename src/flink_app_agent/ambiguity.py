@@ -54,11 +54,13 @@ class AmbiguousRequestError(ValueError):
         assessment: AmbiguityAssessment,
         policy_name: str | None = None,
         policy_result: str | None = None,
+        clarification_questions: tuple[Any, ...] = (),
     ) -> None:
         """Store the structured ambiguity assessment and policy decision."""
         self.assessment = assessment
         self.policy_name = policy_name
         self.policy_result = policy_result
+        self.clarification_questions = clarification_questions
         self.request_category = REQUEST_CATEGORY_AMBIGUOUS
         codes = ", ".join(issue.code for issue in assessment.issues)
         detail = f"Ambiguous request: {codes}"
