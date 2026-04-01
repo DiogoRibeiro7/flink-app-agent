@@ -15,6 +15,7 @@ from .config import (
     DefaultInjection,
     ExtractionOutcome,
     ExtractorConfig,
+    ProviderQualityFindingRecord,
     resolve_extractor_config,
 )
 from .constants import GENERATION_REPORT_FILENAME, ProviderExtractionError
@@ -22,9 +23,15 @@ from .generation_context import GenerationContext
 from .generator import ProjectGenerator
 from .llm import (
     SpecParsingError,
+    ExtractionAnalysis,
     SpecExtractionService,
     build_default_extraction_service,
     build_provider_extraction_service,
+)
+from .provider_quality import (
+    PROVIDER_QUALITY_AMBIGUOUS,
+    PROVIDER_QUALITY_UNUSABLE,
+    ProviderPayloadQualityGate,
 )
 from .repair import DeterministicRepairer, RepairResult
 from .report import GenerationReport, write_generation_report
@@ -169,17 +176,39 @@ def parse_request(
 
     try:
         service = build_provider_extraction_service(config.call_provider)
-        return _extract_with_policy(
-            request=request,
+        analysis = service.analyze(request)
+        quality = ProviderPayloadQualityGate().assess(
+            payload=analysis.payload,
+            ambiguity=analysis.ambiguity,
+        )
+        if quality.category == PROVIDER_QUALITY_UNUSABLE:
+            raise ProviderExtractionError(
+                f"Provider output failed quality gate: {quality.summary}"
+            )
+        return _finalize_analysis_with_policy(
+            analysis=analysis,
+            validator=service.validator,
             extraction_outcome=ExtractionOutcome(
                 requested_mode="provider",
                 fallback_policy=config.fallback,
                 extractor_used="provider",
                 actual_path=("provider",),
                 provider_status="available",
+                provider_quality=quality.category,
+                provider_quality_summary=quality.summary,
+                provider_quality_codes=tuple(
+                    finding.code for finding in quality.findings
+                ),
+                provider_quality_findings=tuple(
+                    ProviderQualityFindingRecord(
+                        code=finding.code,
+                        message=finding.message,
+                        fields=finding.fields,
+                    )
+                    for finding in quality.findings
+                ),
                 ambiguity_policy=config.ambiguity_policy,
             ),
-            service=service,
             policy=policy,
         )
     except AmbiguousRequestError:
@@ -205,6 +234,8 @@ def parse_request(
                 fallback_reason=f"{error_type}: {error_message}",
                 provider_error=error_message,
                 provider_status="unavailable",
+                provider_quality=PROVIDER_QUALITY_UNUSABLE,
+                provider_quality_summary=error_message,
                 ambiguity_policy=config.ambiguity_policy,
                 warnings=(
                     "Provider extraction failed; deterministic fallback was used.",
@@ -229,10 +260,25 @@ def _extract_with_policy(
 ) -> tuple[FlinkJobSpec, ExtractionOutcome]:
     """Run extraction analysis, apply ambiguity policy, then validate."""
     analysis = service.analyze(request)
+    return _finalize_analysis_with_policy(
+        analysis=analysis,
+        validator=service.validator,
+        extraction_outcome=extraction_outcome,
+        policy=policy,
+    )
+
+
+def _finalize_analysis_with_policy(
+    analysis: ExtractionAnalysis,
+    validator,
+    extraction_outcome: ExtractionOutcome,
+    policy: AmbiguityPolicy,
+) -> tuple[FlinkJobSpec, ExtractionOutcome]:
+    """Apply policy to an existing extraction analysis and validate it."""
     policy_result = policy.apply(analysis.ambiguity, analysis.payload)
     payload = dict(analysis.payload)
     payload.update(policy_result.applied_defaults)
-    spec = service.validator.validate(payload)
+    spec = validator.validate(payload)
     issue_codes = tuple(item.issue.code for item in policy_result.classified_issues)
     warnings = extraction_outcome.warnings + policy_result.warnings
     ambiguity_warning = "; ".join(policy_result.warnings) if policy_result.warnings else None
@@ -262,6 +308,10 @@ def _extract_with_policy(
         fallback_reason=extraction_outcome.fallback_reason,
         provider_error=extraction_outcome.provider_error,
         provider_status=extraction_outcome.provider_status,
+        provider_quality=extraction_outcome.provider_quality,
+        provider_quality_summary=extraction_outcome.provider_quality_summary,
+        provider_quality_codes=extraction_outcome.provider_quality_codes,
+        provider_quality_findings=extraction_outcome.provider_quality_findings,
         ambiguity_status=policy_result.classification,
         ambiguity_policy=policy_result.policy_name,
         ambiguity_policy_result=policy_result.status,
@@ -284,6 +334,8 @@ def _derive_interpretation_risk(
     policy_result_status: str,
 ) -> str:
     """Return a compact trust/risk label for one extraction outcome."""
+    if extraction_outcome.provider_quality == PROVIDER_QUALITY_AMBIGUOUS:
+        return "elevated"
     if extraction_outcome.fallback_triggered:
         return "elevated"
     if policy_result_status == "used_safe_defaults":
@@ -409,6 +461,10 @@ def print_generation_summary(context: GenerationContext) -> None:
     print(f"Fallback occurred: {_format_bool(outcome.fallback_triggered)}")
     if outcome.fallback_triggered and outcome.fallback_reason is not None:
         print(f"Fallback reason: {outcome.fallback_reason}")
+    if outcome.provider_quality is not None:
+        print(f"Provider quality: {outcome.provider_quality}")
+    if outcome.provider_quality_summary is not None:
+        print(f"Provider quality summary: {outcome.provider_quality_summary}")
     print(f"Ambiguity status: {outcome.ambiguity_status}")
     print(f"Ambiguity policy: {outcome.ambiguity_policy}")
     print(f"Ambiguity result: {outcome.ambiguity_policy_result}")

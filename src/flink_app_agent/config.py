@@ -56,6 +56,10 @@ class ExtractionOutcome:
     fallback_reason: str | None = None
     provider_error: str | None = None
     provider_status: str | None = None
+    provider_quality: str | None = None
+    provider_quality_summary: str | None = None
+    provider_quality_codes: tuple[str, ...] = ()
+    provider_quality_findings: tuple["ProviderQualityFindingRecord", ...] = ()
     ambiguity_status: str = "clear"
     ambiguity_policy: str = "fail"
     ambiguity_policy_result: str = "clear"
@@ -102,6 +106,23 @@ class DefaultInjection:
             "field": self.field,
             "value": self.value,
             "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class ProviderQualityFindingRecord:
+    """Structured record of one provider-quality finding."""
+
+    code: str
+    message: str
+    fields: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable provider-quality finding."""
+        return {
+            "code": self.code,
+            "message": self.message,
+            "fields": list(self.fields),
         }
 
 
