@@ -56,6 +56,7 @@ class DeterministicRepairer:
         repairs: list[str] = []
         for path in self._iter_text_files(output_dir):
             repairs.extend(self._repair_trailing_placeholder_lines(path))
+            repairs.extend(self._repair_excess_trailing_blank_lines(path))
             repairs.extend(self._repair_missing_final_newline(path))
             repairs.extend(self._repair_trailing_whitespace(path))
         return repairs
@@ -74,6 +75,20 @@ class DeterministicRepairer:
             repaired += "\n"
         path.write_text(repaired, encoding="utf-8")
         return [f"Removed trailing placeholder-only lines from {path}"]
+
+    def _repair_excess_trailing_blank_lines(self, path: Path) -> list[str]:
+        """Collapse multiple trailing blank lines to a single final newline."""
+        text = path.read_text(encoding="utf-8")
+        if not text:
+            return []
+        normalized = text.rstrip("\n")
+        if normalized == text:
+            return []
+        repaired = normalized + "\n"
+        if repaired == text:
+            return []
+        path.write_text(repaired, encoding="utf-8")
+        return [f"Removed excess trailing blank lines from {path}"]
 
     def _repair_missing_final_newline(self, path: Path) -> list[str]:
         """Add a final newline to text files that are missing one."""
