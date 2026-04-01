@@ -35,12 +35,12 @@ jobs:
       - name: Generate sample project
         run: >
           poetry run flink-app-agent
-          --request "Create a Flink job named smoke test that reads from topic payments, writes to topic alerts, keys by account_id, uses consumer group smoke-group, and emits an alert when amount > 1000."
-          --output-dir ./generated/smoke-test
+          --request "Read from Kafka payments, key by account_id, emit Alert within 10 minutes, write to Kafka alerts"
+          --output ./generated/smoke-test
 
       - name: Validate generated files
         shell: bash
         run: |
-          test -f ./generated/smoke-test/job_spec.json
+          test -f ./generated/smoke-test/generation_report.json
           test -f ./generated/smoke-test/pom.xml
-          test -f ./generated/smoke-test/src/main/java/com/example/SmokeTest.java
+          test -f ./generated/smoke-test/src/main/java/com/example/AlertJob.java
