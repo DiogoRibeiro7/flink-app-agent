@@ -48,7 +48,7 @@ The current expectation is a JSON object whose keys map to the `FlinkJobSpec` fi
 - `rule_condition`
 - `time_window_minutes`
 
-The response may use some supported aliases such as camelCase or hyphenated keys. `provider_normalizer.py` maps those aliases to canonical names before validation.
+The response may use some supported aliases such as camelCase or hyphenated keys. `provider_normalizer.py` maps those aliases to canonical names before later quality, ambiguity, and validation stages.
 
 Unknown fields are dropped. Missing required fields, incoherent family/rule combinations, and unsafe type mismatches are rejected.
 
@@ -61,7 +61,9 @@ The accepted path is:
 1. raw provider text
 2. JSON parsing
 3. provider payload normalization
-4. strict `FlinkJobSpec` validation
+4. provider quality gating
+5. ambiguity assessment and policy handling
+6. strict `FlinkJobSpec` validation
 
 This separation matters because the provider normalizer handles messy external output while `spec.py` enforces the final contract used by the rest of the repository.
 
@@ -72,6 +74,8 @@ Provider-backed extraction can fail in a few explicit ways:
 - provider call failure
 - invalid JSON
 - non-object JSON
+- unusable provider quality
+- ambiguity that remains disallowed under the active policy
 - missing required fields
 - incoherent family and rule type
 - type coercion failure
@@ -91,8 +95,18 @@ That includes:
 - `fallback_policy`
 - `actual_path`
 - `fallback_occurred`
+- `fallback_reason`
 - `provider_status` when relevant
+- `provider_quality`
+- `provider_quality_summary`
+- `provider_quality_findings`
+- `interpretation_risk`
+- `ambiguity_status`
+- `ambiguity_policy`
+- `ambiguity_policy_result`
+- `ambiguity_findings`
+- `defaults_injected`
 - extraction `warnings`
 - extraction `errors`
 
-This does not prove provider quality. It proves which path the local tool actually used for that run.
+This does not make provider-backed extraction authoritative. It makes provider-backed interpretation auditable.

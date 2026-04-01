@@ -65,6 +65,7 @@ If Maven is not available on PATH, verification is skipped gracefully with a cle
 The report captures:
 
 - original request text
+- request category
 - job family
 - parsed spec summary
 - selected template identifier
@@ -84,7 +85,15 @@ The extraction provenance block is intentionally compact. It records:
 - fallback policy
 - actual extraction path used
 - whether fallback occurred
+- fallback reason when relevant
 - provider availability status when relevant
+- provider quality details when relevant
+- interpretation risk
+- ambiguity status
+- ambiguity policy
+- ambiguity policy result
+- ambiguity findings
+- default injections
 - extraction warning summary
 - extraction error summary
 
@@ -107,8 +116,10 @@ The compile verification optionally proves the generated Java compiles.
 
 The JSON report preserves the full pipeline state for scripting and automation.
 
-In v0.6 that includes enough extraction provenance to distinguish:
+In v0.7 that includes enough extraction provenance to distinguish:
 
 - a normal deterministic run
 - a successful provider-backed run
 - a provider-backed run that degraded to deterministic fallback
+- a run that continued under a narrow safe-default policy
+- a run that failed before generation because the request was invalid, ambiguous, or unsupported
