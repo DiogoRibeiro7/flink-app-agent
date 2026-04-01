@@ -63,6 +63,20 @@ def test_repair_removes_trailing_whitespace(tmp_path: Path) -> None:
     assert "{}\n" in text
 
 
+def test_repair_removes_excess_trailing_blank_lines(tmp_path: Path) -> None:
+    """Excess blank lines at the end of files should be collapsed safely."""
+    output_dir = tmp_path / "project"
+    output_dir.mkdir()
+    java_file = output_dir / "Example.java"
+    java_file.write_text("public class Example {}\n\n\n", encoding="utf-8")
+
+    result = DeterministicRepairer().repair(output_dir)
+
+    assert result.any_repairs is True
+    assert any("excess trailing blank lines" in r for r in result.repairs)
+    assert java_file.read_text(encoding="utf-8") == "public class Example {}\n"
+
+
 def test_repair_is_idempotent(tmp_path: Path) -> None:
     """Running the repair loop twice should produce no new repairs on the second run."""
     template_dir = Path(__file__).resolve().parents[1] / "templates" / "flink_kafka_rule_job"
