@@ -15,6 +15,7 @@ from flink_app_agent.config import ExtractorConfig
 from flink_app_agent.constants import ProviderExtractionError
 from flink_app_agent.llm import SpecParsingError
 from flink_app_agent.main import parse_request
+from flink_app_agent.request_taxonomy import UnsupportedRequestError
 
 
 VALID_PROVIDER_RESPONSE = json.dumps({
@@ -272,6 +273,17 @@ def test_deterministic_mode_failure_is_not_caught_as_fallback() -> None:
         )
 
 
+def test_unsupported_request_is_distinct_from_invalid_request() -> None:
+    """Structurally understandable but out-of-scope requests should be unsupported."""
+    config = ExtractorConfig(mode="deterministic")
+
+    with pytest.raises(UnsupportedRequestError, match="joins are not supported"):
+        parse_request(
+            "Join payments with accounts by account_id within 10 minutes",
+            extractor_config=config,
+        )
+
+
 def test_fail_on_ambiguity_is_the_safe_default() -> None:
     """The default ambiguity policy should fail rather than inject assumptions."""
     config = ExtractorConfig(mode="deterministic")
@@ -334,3 +346,32 @@ def test_fallback_outcome_records_reason() -> None:
     assert outcome.fallback_triggered is True
     assert "ProviderExtractionError" in outcome.fallback_reason
     assert "provider unreachable" in outcome.fallback_reason
+
+
+def test_provider_output_with_unsupported_family_raises_unsupported_request() -> None:
+    """Provider-backed output outside the supported families should use the same taxonomy."""
+    def unsupported_provider(_: str, __: str) -> str:
+        return json.dumps(
+            {
+                "job_family": "stream_join",
+                "job_name": "join-job",
+                "source_topic": "payments",
+                "sink_topic": "alerts",
+                "key_by": "account_id",
+                "event_time_field": "event_time",
+                "input_event_name": "InputEvent",
+                "output_event_name": "JoinedEvent",
+                "rule_type": "join_streams",
+                "rule_condition": "join streams by account_id",
+                "time_window_minutes": 10,
+            }
+        )
+
+    config = ExtractorConfig(
+        mode="provider",
+        fallback="fail",
+        call_provider=unsupported_provider,
+    )
+
+    with pytest.raises(UnsupportedRequestError, match="outside the current supported feature scope"):
+        parse_request("any request", extractor_config=config)

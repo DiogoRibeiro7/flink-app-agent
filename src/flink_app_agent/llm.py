@@ -11,6 +11,7 @@ from typing import Any, Callable, Protocol
 from .ambiguity import AmbiguityAssessment, AmbiguousRequestError, CandidateAmbiguityAssessor
 from .constants import ProviderExtractionError
 from .provider_normalizer import normalize_provider_payload
+from .request_taxonomy import UnsupportedRequestError
 from .spec import (
     ALLOWED_RULE_TYPE,
     FlinkJobSpec,
@@ -130,7 +131,9 @@ class SpecExtractionService:
         """Run preprocessing and ambiguity assessment before final validation."""
         normalized_request = self.preprocessor.preprocess(request)
         prompt = self.prompt_repository.load(self.prompt_name)
+        _raise_for_unsupported_request(normalized_request, {})
         payload = self.payload_extractor.extract_payload(normalized_request, prompt)
+        _raise_for_unsupported_request(normalized_request, payload)
         ambiguity = self.ambiguity_assessor.assess(normalized_request, payload)
         return ExtractionAnalysis(
             request=normalized_request,
@@ -495,3 +498,26 @@ def build_provider_spec_extractor(
     """Return a provider-backed extractor that validates through the same pipeline."""
     service = build_provider_extraction_service(call_provider)
     return ServiceBackedSpecExtractor(extraction_service=service)
+
+
+def _raise_for_unsupported_request(request: str, payload: dict[str, Any]) -> None:
+    """Raise when the request is understandable but outside supported scope."""
+    family = payload.get("job_family")
+    if isinstance(family, str) and family and family not in {
+        JOB_FAMILY_KEYED_RULE,
+        JOB_FAMILY_WINDOWED_AGGREGATION,
+    }:
+        raise UnsupportedRequestError(
+            f"job family '{family}' is outside the current supported feature scope."
+        )
+
+    lowered = request.lower()
+    unsupported_patterns = (
+        (r"\bjoin\b", "joins are not supported"),
+        (r"\benrich\b", "enrichment flows are not supported"),
+        (r"\bdeduplicat(?:e|ion)\b", "deduplication flows are not supported"),
+        (r"\bsession window\b", "session windows are not supported"),
+    )
+    for pattern, message in unsupported_patterns:
+        if re.search(pattern, lowered):
+            raise UnsupportedRequestError(message)

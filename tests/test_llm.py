@@ -29,6 +29,7 @@ from flink_app_agent.llm import (
     build_provider_spec_extractor,
     load_prompt,
 )
+from flink_app_agent.request_taxonomy import UnsupportedRequestError
 
 
 def test_load_prompt_reads_extract_prompt() -> None:
@@ -458,8 +459,8 @@ def test_provider_extractor_wraps_provider_exceptions() -> None:
         extractor.extract_spec("any request")
 
 
-def test_provider_output_with_invalid_spec_fails_validation() -> None:
-    """Provider output that is valid JSON but has bad field values should fail validation."""
+def test_provider_output_with_unsupported_family_is_classified_as_unsupported() -> None:
+    """Unsupported provider families should not be blurred into generic validation failures."""
     def mock_provider(request: str, prompt: str) -> str:
         return json.dumps({
             "job_family": "unsupported_family",
@@ -477,7 +478,7 @@ def test_provider_output_with_invalid_spec_fails_validation() -> None:
 
     extractor = build_provider_spec_extractor(mock_provider)
 
-    with pytest.raises(ValidationError, match="job_family"):
+    with pytest.raises(UnsupportedRequestError, match="outside the current supported feature scope"):
         extractor.extract_spec("any request")
 
 

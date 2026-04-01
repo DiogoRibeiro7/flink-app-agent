@@ -16,6 +16,7 @@ from .config import (
 from .constants import GENERATION_REPORT_FILENAME
 from .generation_context import GenerationContext
 from .repair import RepairResult
+from .request_taxonomy import REQUEST_CATEGORY_SUPPORTED
 from .review import ReviewResult
 from .spec import FlinkJobSpec
 from .verification import VerificationResult
@@ -200,6 +201,7 @@ class GenerationReport:
     """Serializable report for one local generation run."""
 
     request_text: str
+    request_category: str
     job_family: str | None
     parsed_spec_summary: dict[str, Any] | None
     selected_template: str | None
@@ -233,6 +235,7 @@ class GenerationReport:
             requested_mode="deterministic",
             fallback_policy="fail",
             extractor_used="deterministic",
+            request_category=REQUEST_CATEGORY_SUPPORTED,
             actual_path=("deterministic",),
         )
         extraction_report = InterpretationProvenanceReport(
@@ -289,6 +292,7 @@ class GenerationReport:
         )
         return cls(
             request_text=request_text,
+            request_category=eo.request_category,
             job_family=spec.job_family,
             parsed_spec_summary=spec.model_dump(),
             selected_template=selected_template,
@@ -347,6 +351,7 @@ class GenerationReport:
         )
         return cls(
             request_text=request_text,
+            request_category=extraction_outcome.request_category,
             job_family=None,
             parsed_spec_summary=None,
             selected_template=None,
@@ -367,6 +372,7 @@ class GenerationReport:
         """Return the report as a plain JSON-serializable dictionary."""
         payload: dict[str, Any] = {
             "request_text": self.request_text,
+            "request_category": self.request_category,
             "job_family": self.job_family,
             "parsed_spec_summary": self.parsed_spec_summary,
             "selected_template": self.selected_template,

@@ -21,6 +21,7 @@ from flink_app_agent.llm import build_default_spec_extractor
 from flink_app_agent.main import parse_request
 from flink_app_agent.config import ExtractorConfig
 from flink_app_agent.report import REPORT_FILENAME, write_generation_report, GenerationReport
+from flink_app_agent.request_taxonomy import REQUEST_CATEGORY_AMBIGUOUS, REQUEST_CATEGORY_UNSUPPORTED
 from flink_app_agent.review import ReviewResult, StructuralReviewer
 from flink_app_agent.template_registry import TemplateRegistry
 
@@ -65,6 +66,7 @@ def test_generation_report_file_is_created_with_key_fields(tmp_path: Path) -> No
 
     assert report_path == output_dir / REPORT_FILENAME
     assert payload["request_text"] == request
+    assert payload["request_category"] == "supported"
     assert payload["job_family"] == "keyed_temporal_rule"
     assert payload["selected_template"] == "flink_kafka_rule_job"
     assert payload["parsed_spec_summary"]["source_topic"] == "sensor-events"
@@ -308,6 +310,7 @@ def test_failure_report_content_for_ambiguity_related_failure() -> None:
         requested_mode="deterministic",
         fallback_policy="fail",
         extractor_used="deterministic",
+        request_category=REQUEST_CATEGORY_AMBIGUOUS,
         actual_path=("deterministic",),
         ambiguity_status="major",
         ambiguity_policy="fail",
@@ -334,6 +337,7 @@ def test_failure_report_content_for_ambiguity_related_failure() -> None:
 
     assert report.to_dict() == {
         "request_text": "Read from Kafka payments, emit Alert within 10 minutes, write to Kafka alerts",
+        "request_category": REQUEST_CATEGORY_AMBIGUOUS,
         "job_family": None,
         "parsed_spec_summary": None,
         "selected_template": None,
@@ -477,3 +481,30 @@ def test_provider_quality_details_appear_in_report() -> None:
             "fields": [],
         }
     ]
+
+
+def test_failure_report_can_mark_unsupported_requests() -> None:
+    """Failure reports should preserve the unsupported category explicitly."""
+    extraction_outcome = ExtractionOutcome(
+        requested_mode="provider",
+        fallback_policy="fail",
+        extractor_used="provider",
+        request_category=REQUEST_CATEGORY_UNSUPPORTED,
+        actual_path=("provider",),
+        provider_status="available",
+        provider_quality="acceptable",
+        provider_quality_summary="acceptable",
+    )
+
+    report = GenerationReport.from_failure(
+        request_text="Join payments with accounts by account_id within 10 minutes",
+        output_directory=Path("out"),
+        extraction_outcome=extraction_outcome,
+        failure_stage="extraction",
+        failure_reason="joins are not supported",
+    )
+
+    payload = report.to_dict()
+
+    assert payload["request_category"] == REQUEST_CATEGORY_UNSUPPORTED
+    assert payload["failure_reason"] == "joins are not supported"

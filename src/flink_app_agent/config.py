@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .llm import ProviderCallable
+from .request_taxonomy import REQUEST_CATEGORY_SUPPORTED
 
 EXTRACTOR_ENV_VAR = "FLINK_AGENT_EXTRACTOR"
 PROVIDER_ENTRY_POINT_ENV_VAR = "FLINK_AGENT_PROVIDER_ENTRY_POINT"
@@ -51,6 +52,7 @@ class ExtractionOutcome:
     requested_mode: str
     fallback_policy: str
     extractor_used: str
+    request_category: str = REQUEST_CATEGORY_SUPPORTED
     actual_path: tuple[str, ...] = ()
     fallback_triggered: bool = False
     fallback_reason: str | None = None
