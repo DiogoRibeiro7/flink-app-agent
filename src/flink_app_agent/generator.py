@@ -135,9 +135,10 @@ class ProjectGenerator:
         return output_dir
 
     def _rename_template_files(self, output_dir: Path, spec: FlinkJobSpec) -> None:
-        """Rename the common Java template files to the resolved class names."""
+        """Rename common Java template files and keep class declarations aligned."""
+        main_class_name = build_main_class_name(spec.job_name)
         renames = {
-            "JobTemplate.java": f"{build_main_class_name(spec.job_name)}.java",
+            "JobTemplate.java": f"{main_class_name}.java",
             "InputEvent.java": f"{spec.input_event_name}.java",
             "OutputEvent.java": f"{spec.output_event_name}.java",
         }
@@ -148,6 +149,13 @@ class ProjectGenerator:
             new_name = renames.get(path.name)
             if new_name is None or new_name == path.name:
                 continue
+
+            if path.name == "JobTemplate.java":
+                source = path.read_text(encoding="utf-8")
+                source = source.replace("final class JobTemplate", f"final class {main_class_name}")
+                source = source.replace("private JobTemplate()", f"private {main_class_name}()")
+                path.write_text(source, encoding="utf-8")
+
             target_path = path.with_name(new_name)
             if target_path.exists():
                 raise FileExistsError(f"Cannot rename file because target already exists: {target_path}")
