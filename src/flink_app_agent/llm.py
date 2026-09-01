@@ -517,6 +517,7 @@ def _raise_for_unsupported_request(request: str, payload: dict[str, Any]) -> Non
         (r"\bjoin\b", "joins are not supported"),
         (r"\benrich\b", "enrichment flows are not supported"),
         (r"\bdeduplicat(?:e|ion)\b", "deduplication flows are not supported"),
+        (r"\bsliding[\s-]+windows?\b", "sliding windows are not supported"),
     )
     for pattern, message in unsupported_patterns:
         if re.search(pattern, lowered):

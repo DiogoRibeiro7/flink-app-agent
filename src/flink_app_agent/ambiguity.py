@@ -106,11 +106,13 @@ class CandidateAmbiguityAssessor:
                     fields=("key_by",),
                 )
             )
-        elif re.search(r"\b(?:or|and/or)\b", key_by, flags=re.IGNORECASE):
+        elif self._request_has_alternative_keys(request) or re.search(
+            r"\b(?:or|and/or)\b", key_by, flags=re.IGNORECASE
+        ):
             issues.append(
                 AmbiguityIssue(
                     code="unclear_key_field",
-                    message="The extracted key field contains multiple plausible options.",
+                    message="The request contains multiple plausible key fields.",
                     fields=("key_by",),
                 )
             )
@@ -147,6 +149,18 @@ class CandidateAmbiguityAssessor:
             )
 
         family = _string_value(payload, "job_family")
+        if family == JOB_FAMILY_KEYED_RULE and has_aggregation_signal and not has_emit_signal:
+            return AmbiguityIssue(
+                code="request_family_mismatch",
+                message="The extracted keyed-rule family contradicts aggregation wording in the request.",
+                fields=("job_family", "rule_type"),
+            )
+        if family == JOB_FAMILY_WINDOWED_AGGREGATION and has_emit_signal and not has_aggregation_signal:
+            return AmbiguityIssue(
+                code="request_family_mismatch",
+                message="The extracted aggregation family contradicts emitted-event wording in the request.",
+                fields=("job_family", "rule_type"),
+            )
         if family in {JOB_FAMILY_KEYED_RULE, JOB_FAMILY_WINDOWED_AGGREGATION}:
             return None
 
@@ -157,6 +171,18 @@ class CandidateAmbiguityAssessor:
                 fields=("job_family",),
             )
         return None
+
+    @staticmethod
+    def _request_has_alternative_keys(request: str) -> bool:
+        """Return whether the request explicitly offers multiple key-field alternatives."""
+        return bool(
+            re.search(
+                r"\b(?:key(?:ed|ing)? by|group by|partition by)\s+"
+                r"[A-Za-z0-9_.-]+\s+(?:or|and/or)\s+[A-Za-z0-9_.-]+\b",
+                request,
+                flags=re.IGNORECASE,
+            )
+        )
 
     def _has_vague_temporal_language(
         self,
