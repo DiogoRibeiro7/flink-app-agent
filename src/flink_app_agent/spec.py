@@ -11,18 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 FILESYSTEM_SAFE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 JAVA_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
-JAVA_KEYWORDS: frozenset[str] = frozenset(
-    {
-        "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char",
-        "class", "const", "continue", "default", "do", "double", "else", "enum",
-        "extends", "final", "finally", "float", "for", "goto", "if", "implements",
-        "import", "instanceof", "int", "interface", "long", "native", "new", "package",
-        "private", "protected", "public", "return", "short", "static", "strictfp",
-        "super", "switch", "synchronized", "this", "throw", "throws", "transient",
-        "try", "void", "volatile", "while", "true", "false", "null", "record",
-        "sealed", "permits", "yield", "var",
-    }
-)
 ALLOWED_RULE_TYPE = "two_events_within_window"
 WINDOWED_AGGREGATION_RULE_TYPE = "count_by_key_window"
 SESSION_WINDOW_AGGREGATION_RULE_TYPE = "count_by_key_session_window"
@@ -98,8 +86,8 @@ class FlinkJobSpec(BaseModel):
         normalized = cls.normalize_class_name(value)
         if not normalized:
             raise ValueError(f"{info.field_name} must not be empty.")
-        if not JAVA_IDENTIFIER_PATTERN.fullmatch(normalized) or normalized in JAVA_KEYWORDS:
-            raise ValueError(f"{info.field_name} must be a valid non-keyword Java identifier.")
+        if not JAVA_IDENTIFIER_PATTERN.fullmatch(normalized):
+            raise ValueError(f"{info.field_name} must be a valid Java identifier.")
         return normalized
 
     @field_validator("job_family")
