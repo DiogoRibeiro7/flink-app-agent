@@ -80,12 +80,12 @@ def _question_for_issue(
             fields=("job_family",),
         )
 
-    if issue_code == "conflicting_aggregation_intent":
+    if issue_code in {"conflicting_aggregation_intent", "request_family_mismatch"}:
         return ClarificationQuestion(
             code=issue_code,
             question=(
-                "Should this request count events by key or emit inferred events "
-                "for matching keyed patterns?"
+                "Should this request use the keyed temporal-rule family or the "
+                "windowed-aggregation family, and which rule type should apply?"
             ),
             fields=("job_family", "rule_type"),
         )
