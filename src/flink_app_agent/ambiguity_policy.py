@@ -51,6 +51,12 @@ class AmbiguityPolicy:
 
     def apply(self, assessment: AmbiguityAssessment, payload: dict[str, Any]) -> AmbiguityPolicyResult:
         """Return the policy decision for one ambiguity assessment."""
+        if self.name not in VALID_AMBIGUITY_POLICIES:
+            raise ValueError(
+                f"Invalid ambiguity policy '{self.name}'. "
+                f"Must be one of: {', '.join(VALID_AMBIGUITY_POLICIES)}."
+            )
+
         classified_issues = tuple(
             ClassifiedAmbiguity(issue=issue, severity=_classify_issue(issue, payload))
             for issue in assessment.issues
