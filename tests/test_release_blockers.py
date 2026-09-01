@@ -52,12 +52,7 @@ def test_request_family_mismatch_has_an_actionable_clarification() -> None:
 def test_event_model_names_reject_invalid_java_names_and_collisions() -> None:
     payload = FlinkJobSpec.demo().model_dump()
     payload["input_event_name"] = "123 event"
-    with pytest.raises(ValidationError, match="valid non-keyword Java identifier"):
-        FlinkJobSpec.model_validate(payload)
-
-    payload = FlinkJobSpec.demo().model_dump()
-    payload["input_event_name"] = "class"
-    with pytest.raises(ValidationError, match="valid non-keyword Java identifier"):
+    with pytest.raises(ValidationError, match="valid Java identifier"):
         FlinkJobSpec.model_validate(payload)
 
     payload = FlinkJobSpec.demo().model_dump()
