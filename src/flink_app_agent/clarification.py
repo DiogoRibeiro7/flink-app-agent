@@ -90,6 +90,16 @@ def _question_for_issue(
             fields=("job_family", "rule_type"),
         )
 
+    if issue_code == "request_family_mismatch":
+        return ClarificationQuestion(
+            code=issue_code,
+            question=(
+                "Should this request use the keyed temporal-rule family or the "
+                "windowed-aggregation family, and which rule type should apply?"
+            ),
+            fields=("job_family", "rule_type"),
+        )
+
     if issue_code == "vague_temporal_language":
         return ClarificationQuestion(
             code=issue_code,

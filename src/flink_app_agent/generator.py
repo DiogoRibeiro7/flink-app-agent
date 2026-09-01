@@ -23,6 +23,20 @@ SAFE_TEXT_EXTENSIONS: frozenset[str] = frozenset(
     }
 )
 PLACEHOLDER_PATTERN = re.compile(r"\{\{[A-Z0-9_]+\}\}")
+MAIN_CLASS_DECLARATION_PATTERN = re.compile(
+    r"(?m)^(?P<indent>\s*)"
+    r"(?P<modifiers>(?:(?:public|protected|private|abstract|final|strictfp|sealed|non-sealed)\s+)*)"
+    r"class\s+JobTemplate\b"
+)
+MAIN_CONSTRUCTOR_DECLARATION_PATTERN = re.compile(
+    r"(?m)^(?P<indent>\s*)"
+    r"(?P<modifier>(?:(?:public|protected|private)\s+)?)"
+    r"JobTemplate(?P<suffix>\s*\()"
+)
+RESIDUAL_MAIN_CONSTRUCTOR_PATTERN = re.compile(
+    r"\bJobTemplate(?:\s|/\*.*?\*/|//[^\n]*(?:\n|$))*\(",
+    flags=re.DOTALL,
+)
 
 
 class TemplateRenderingError(ValueError):
@@ -135,9 +149,10 @@ class ProjectGenerator:
         return output_dir
 
     def _rename_template_files(self, output_dir: Path, spec: FlinkJobSpec) -> None:
-        """Rename the common Java template files to the resolved class names."""
+        """Rename common Java template files and keep class declarations aligned."""
+        main_class_name = build_main_class_name(spec.job_name)
         renames = {
-            "JobTemplate.java": f"{build_main_class_name(spec.job_name)}.java",
+            "JobTemplate.java": f"{main_class_name}.java",
             "InputEvent.java": f"{spec.input_event_name}.java",
             "OutputEvent.java": f"{spec.output_event_name}.java",
         }
@@ -148,10 +163,42 @@ class ProjectGenerator:
             new_name = renames.get(path.name)
             if new_name is None or new_name == path.name:
                 continue
+
+            if path.name == "JobTemplate.java":
+                self._rewrite_main_class(path, main_class_name)
+
             target_path = path.with_name(new_name)
             if target_path.exists():
                 raise FileExistsError(f"Cannot rename file because target already exists: {target_path}")
             path.rename(target_path)
+
+    def _rewrite_main_class(self, path: Path, main_class_name: str) -> None:
+        """Rewrite the template main class and fail if any old constructor remains."""
+        source = path.read_text(encoding="utf-8")
+        rewritten, declaration_count = MAIN_CLASS_DECLARATION_PATTERN.subn(
+            lambda match: (
+                f"{match.group('indent')}{match.group('modifiers')}class {main_class_name}"
+            ),
+            source,
+            count=1,
+        )
+        if declaration_count != 1:
+            raise TemplateRenderingError(
+                "JobTemplate.java must contain one recognizable 'class JobTemplate' declaration."
+            )
+
+        rewritten = MAIN_CONSTRUCTOR_DECLARATION_PATTERN.sub(
+            lambda match: (
+                f"{match.group('indent')}{match.group('modifier')}"
+                f"{main_class_name}{match.group('suffix')}"
+            ),
+            rewritten,
+        )
+        if RESIDUAL_MAIN_CONSTRUCTOR_PATTERN.search(rewritten):
+            raise TemplateRenderingError(
+                "JobTemplate.java contains an unrecognized 'JobTemplate' constructor declaration."
+            )
+        path.write_text(rewritten, encoding="utf-8")
 
     def _list_generated_files(self, output_dir: Path) -> list[Path]:
         """Return all generated files under the output directory."""
