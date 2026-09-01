@@ -1,111 +1,180 @@
-"""Template rendering logic for generated Flink projects."""
+"""Local template generator for the current single-template pipeline."""
 
 from __future__ import annotations
 
+import re
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .spec import FlinkJobSpec
-from .utils import write_json_file
+from .utils import to_pascal_case
 
 
-@dataclass
-class ProjectGenerator:
-    """Generate a Flink project from the single supported template."""
+SAFE_TEXT_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".java",
+        ".md",
+        ".properties",
+        ".txt",
+        ".xml",
+        ".yaml",
+        ".yml",
+    }
+)
+PLACEHOLDER_PATTERN = re.compile(r"\{\{[A-Z0-9_]+\}\}")
 
-    template_root: Path
 
-    def generate(self, spec: FlinkJobSpec, output_dir: Path) -> Path:
-        """Copy the template and fill placeholders in text files."""
-        template_dir = self.template_root / spec.template_id
-        if not template_dir.exists():
-            raise FileNotFoundError(f"Template not found: {template_dir}")
+class TemplateRenderingError(ValueError):
+    """Raised when rendered text files still contain unresolved placeholders."""
 
-        project_dir = output_dir
-        if project_dir.exists():
-            raise FileExistsError(f"Output directory already exists: {project_dir}")
 
-        shutil.copytree(template_dir, project_dir)
-        replacements = self._build_replacements(spec)
-        self._render_directory(project_dir, replacements)
-        self._move_package_directories(project_dir, spec)
-        self._rename_main_job_file(project_dir, spec)
-        write_json_file(project_dir / "job_spec.json", spec.model_dump())
-        return project_dir
+@dataclass(frozen=True)
+class PlaceholderMapping:
+    """Convert a validated spec into explicit template placeholders."""
 
-    def _build_replacements(self, spec: FlinkJobSpec) -> dict[str, str]:
-        """Build the placeholder map used across template files."""
-        package_path = spec.package_name.replace(".", "/")
-        return {
-            "{{JOB_NAME}}": spec.job_name,
-            "{{JOB_CLASS_NAME}}": spec.job_class_name,
-            "{{PACKAGE_NAME}}": spec.package_name,
-            "{{PACKAGE_PATH}}": package_path,
-            "{{INPUT_TOPIC}}": spec.input_topic,
-            "{{OUTPUT_TOPIC}}": spec.output_topic,
-            "{{CONSUMER_GROUP}}": spec.consumer_group,
-            "{{KEY_FIELD}}": spec.key_field,
-            "{{RULE_EXPRESSION}}": spec.rule_expression,
-            "{{BOOTSTRAP_SERVERS}}": spec.bootstrap_servers,
-            "{{INPUT_SCHEMA_CLASS}}": spec.input_schema_class,
-            "{{OUTPUT_SCHEMA_CLASS}}": spec.output_schema_class,
-        }
+    spec: FlinkJobSpec
 
-    def _render_directory(self, root: Path, replacements: dict[str, str]) -> None:
-        """Replace placeholders in all text files under the copied template."""
-        for path in root.rglob("*"):
-            if path.is_dir():
-                continue
-            text = path.read_text(encoding="utf-8")
-            rendered_text = self._replace_tokens(text, replacements)
-            if rendered_text != text:
-                path.write_text(rendered_text, encoding="utf-8")
+    def as_dict(self) -> dict[str, str]:
+        """Return the placeholder mapping used during template rendering."""
+        return {f"{{{{{key}}}}}": value for key, value in self.spec.to_template_dict().items()}
 
-    def _replace_tokens(self, text: str, replacements: dict[str, str]) -> str:
-        """Apply all placeholder replacements to a text fragment."""
+
+@dataclass(frozen=True)
+class TemplateRenderer:
+    """Render supported text files with simple placeholder replacement."""
+
+    text_extensions: frozenset[str] = SAFE_TEXT_EXTENSIONS
+
+    def render_directory(self, root_dir: Path, placeholders: dict[str, str]) -> None:
+        """Render all supported text files under the copied template tree."""
+        for path in self.iter_text_files(root_dir):
+            self.render_file(path, placeholders)
+
+    def iter_text_files(self, root_dir: Path) -> list[Path]:
+        """Return files that are safe to treat as text during rendering."""
+        return sorted(
+            path
+            for path in root_dir.rglob("*")
+            if path.is_file() and path.suffix in self.text_extensions
+        )
+
+    def render_file(self, path: Path, placeholders: dict[str, str]) -> None:
+        """Render one text file and reject unresolved placeholders."""
+        text = path.read_text(encoding="utf-8")
+        if path.suffix == ".java":
+            rendered = self.render_java_text(text, placeholders)
+        else:
+            rendered = self.render_text(text, placeholders)
+        if rendered != text:
+            path.write_text(rendered, encoding="utf-8")
+
+    def render_java_text(self, text: str, placeholders: dict[str, str]) -> str:
+        """Render Java text while escaping placeholders used as string literals."""
         rendered = text
-        for key, value in replacements.items():
-            rendered = rendered.replace(key, value)
+        for placeholder, value in placeholders.items():
+            quoted_placeholder = f'"{placeholder}"'
+            if quoted_placeholder in rendered:
+                escaped_value = _escape_java_string_literal(value)
+                rendered = rendered.replace(
+                    quoted_placeholder,
+                    f'"{escaped_value}"',
+                )
+        return self.render_text(rendered, placeholders)
+
+    def render_text(self, text: str, placeholders: dict[str, str]) -> str:
+        """Render text and fail if placeholders remain unresolved."""
+        rendered = text
+        for placeholder, value in placeholders.items():
+            rendered = rendered.replace(placeholder, value)
+
+        unresolved = sorted(set(PLACEHOLDER_PATTERN.findall(rendered)))
+        if unresolved:
+            unresolved_text = ", ".join(unresolved)
+            raise TemplateRenderingError(
+                f"Unresolved placeholders remain after rendering: {unresolved_text}"
+            )
         return rendered
 
-    def _move_package_directories(self, root: Path, spec: FlinkJobSpec) -> None:
-        """Move the Java source tree from the template package to the target package."""
-        package_parts = spec.package_name.split(".")
-        for relative_root in ("src/main/java", "src/test/java"):
-            source_dir = root / relative_root / "com" / "example"
-            if not source_dir.exists():
+
+@dataclass(frozen=True)
+class ProjectGenerator:
+    """Generate a Flink project from the currently selected local template directory."""
+
+    template_dir: Path
+    renderer: TemplateRenderer = field(default_factory=TemplateRenderer)
+
+    def generate(self, spec: FlinkJobSpec, output_dir: Path) -> list[Path]:
+        """Copy the template, render placeholders, rename template classes, and list files."""
+        self._validate_template_dir()
+        self._validate_output_dir(output_dir)
+        project_dir = self._copy_template(output_dir)
+        placeholders = PlaceholderMapping(spec).as_dict()
+        self.renderer.render_directory(project_dir, placeholders)
+        self._rename_template_files(project_dir, spec)
+        return self._list_generated_files(project_dir)
+
+    def _validate_template_dir(self) -> None:
+        """Ensure the configured template directory exists and is a directory."""
+        if not self.template_dir.exists():
+            raise FileNotFoundError(f"Template directory not found: {self.template_dir}")
+        if not self.template_dir.is_dir():
+            raise NotADirectoryError(f"Template path is not a directory: {self.template_dir}")
+
+    def _validate_output_dir(self, output_dir: Path) -> None:
+        """Reject invalid output paths before any files are copied."""
+        if output_dir.exists():
+            raise FileExistsError(f"Output path already exists: {output_dir}")
+        if output_dir.parent.exists() and not output_dir.parent.is_dir():
+            raise NotADirectoryError(f"Output parent is not a directory: {output_dir.parent}")
+
+    def _copy_template(self, output_dir: Path) -> Path:
+        """Copy the template directory into the requested output directory."""
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(self.template_dir, output_dir)
+        return output_dir
+
+    def _rename_template_files(self, output_dir: Path, spec: FlinkJobSpec) -> None:
+        """Rename the common Java template files to the resolved class names."""
+        renames = {
+            "JobTemplate.java": f"{build_main_class_name(spec.job_name)}.java",
+            "InputEvent.java": f"{spec.input_event_name}.java",
+            "OutputEvent.java": f"{spec.output_event_name}.java",
+        }
+
+        for path in sorted(output_dir.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+            if not path.is_file():
                 continue
-
-            target_dir = root / relative_root
-            for part in package_parts:
-                target_dir = target_dir / part
-
-            if source_dir == target_dir:
+            new_name = renames.get(path.name)
+            if new_name is None or new_name == path.name:
                 continue
+            target_path = path.with_name(new_name)
+            if target_path.exists():
+                raise FileExistsError(f"Cannot rename file because target already exists: {target_path}")
+            path.rename(target_path)
 
-            target_dir.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(source_dir), str(target_dir))
+    def _list_generated_files(self, output_dir: Path) -> list[Path]:
+        """Return all generated files under the output directory."""
+        return sorted(path for path in output_dir.rglob("*") if path.is_file())
 
-            # Remove the leftover empty template directories when possible.
-            self._remove_empty_parents(root / relative_root / "com", stop_at=root / relative_root)
 
-    def _rename_main_job_file(self, root: Path, spec: FlinkJobSpec) -> None:
-        """Rename the generated main job file so it matches the public Java class."""
-        package_dir = root / "src" / "main" / "java"
-        for part in spec.package_name.split("."):
-            package_dir = package_dir / part
+def _escape_java_string_literal(value: str) -> str:
+    """Escape one value for safe insertion inside a Java string literal."""
+    replacements = {
+        "\\": "\\\\",
+        '"': '\\"',
+        "\b": "\\b",
+        "\f": "\\f",
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+    }
+    return "".join(replacements.get(character, character) for character in value)
 
-        source_file = package_dir / "JobTemplate.java"
-        if source_file.exists():
-            source_file.rename(package_dir / f"{spec.job_class_name}.java")
 
-    def _remove_empty_parents(self, path: Path, stop_at: Path) -> None:
-        """Delete empty directories created by the template package layout."""
-        current = path
-        while current != stop_at and current.exists():
-            try:
-                current.rmdir()
-            except OSError:
-                break
-            current = current.parent
+def build_main_class_name(job_name: str) -> str:
+    """Build the generated main Java class name from a normalized job name."""
+    base_name = to_pascal_case(job_name)
+    if base_name.endswith("Job"):
+        return base_name
+    return f"{base_name}Job"

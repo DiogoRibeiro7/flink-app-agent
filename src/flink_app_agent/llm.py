@@ -1,103 +1,523 @@
-"""Stub LLM interface used by the first project version."""
+"""Extraction layer boundaries with deterministic and provider-backed implementations."""
 
 from __future__ import annotations
 
+import json
 import re
-from dataclasses import dataclass
-from typing import Any, Protocol
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable, Protocol
 
+from .ambiguity import AmbiguityAssessment, AmbiguousRequestError, CandidateAmbiguityAssessor
+from .constants import ProviderExtractionError
+from .provider_normalizer import normalize_provider_payload
+from .request_taxonomy import REQUEST_CATEGORY_INVALID, UnsupportedRequestError
+from .spec import (
+    ALLOWED_RULE_TYPE,
+    FlinkJobSpec,
+    JOB_FAMILY_KEYED_RULE,
+    JOB_FAMILY_WINDOWED_AGGREGATION,
+    SESSION_WINDOW_AGGREGATION_RULE_TYPE,
+    WINDOWED_AGGREGATION_RULE_TYPE,
+)
 from .utils import slugify, to_pascal_case
 
 
-class LLMClient(Protocol):
-    """Minimal interface for extracting a structured payload from text."""
-
-    def extract_spec(self, prompt: str, request: str) -> dict[str, Any]:
-        """Return a structured payload derived from the natural-language request."""
+PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+EXTRACT_SPEC_PROMPT = "extract_spec.md"
 
 
-@dataclass
-class StubLLMClient:
-    """Deterministic placeholder implementation for local development."""
+class SpecParsingError(ValueError):
+    """Raised when a request does not match the supported deterministic patterns."""
 
-    default_bootstrap_servers: str = "localhost:9092"
+    def __init__(self, message: str) -> None:
+        """Store the explicit invalid category for shared error handling."""
+        self.request_category = REQUEST_CATEGORY_INVALID
+        super().__init__(message)
 
-    def extract_spec(self, prompt: str, request: str) -> dict[str, Any]:
-        """Extract a simple spec using lightweight heuristics instead of an LLM."""
+
+class PromptRepository(Protocol):
+    """Interface for loading named prompt text used by extraction."""
+
+    def load(self, prompt_name: str) -> str:
+        """Return the prompt text for the given prompt name."""
+
+
+class RequestPreprocessor(Protocol):
+    """Interface for normalizing raw user requests before extraction."""
+
+    def preprocess(self, request: str) -> str:
+        """Return the normalized request text."""
+
+
+class SpecPayloadExtractor(Protocol):
+    """Interface for converting prompt-guided text into a raw spec payload."""
+
+    def extract_payload(self, request: str, prompt: str) -> dict[str, Any]:
+        """Return a raw payload that can be validated into ``FlinkJobSpec``."""
+
+
+class SpecValidator(Protocol):
+    """Interface for validating raw payloads into the internal spec model."""
+
+    def validate(self, payload: dict[str, Any]) -> FlinkJobSpec:
+        """Return a validated ``FlinkJobSpec``."""
+
+
+class SpecExtractor(Protocol):
+    """Top-level interface for converting a request into a validated spec."""
+
+    def extract_spec(self, request: str) -> FlinkJobSpec:
+        """Parse a request into a validated ``FlinkJobSpec``."""
+
+
+@dataclass(frozen=True)
+class FilePromptRepository:
+    """Load local prompt files from the package prompt directory."""
+
+    prompts_dir: Path = PROMPTS_DIR
+
+    def load(self, prompt_name: str) -> str:
+        """Return the contents of a prompt file."""
+        prompt_path = self.prompts_dir / prompt_name
+        if not prompt_path.exists():
+            raise FileNotFoundError(f"Prompt file not found: {prompt_name}")
+        return prompt_path.read_text(encoding="utf-8")
+
+
+def load_prompt(prompt_name: str) -> str:
+    """Load a prompt file using the default local repository."""
+    return FilePromptRepository().load(prompt_name)
+
+
+@dataclass(frozen=True)
+class SimpleRequestPreprocessor:
+    """Normalize requests without changing their semantic structure."""
+
+    def preprocess(self, request: str) -> str:
+        """Collapse repeated whitespace and trim the outer edges."""
+        return re.sub(r"\s+", " ", request).strip()
+
+
+@dataclass(frozen=True)
+class PydanticSpecValidator:
+    """Validate extracted payloads using the project Pydantic model."""
+
+    def validate(self, payload: dict[str, Any]) -> FlinkJobSpec:
+        """Convert a raw payload into a validated ``FlinkJobSpec``."""
+        return FlinkJobSpec.from_llm_payload(payload)
+
+
+class AmbiguityAssessor(Protocol):
+    """Interface for assessing ambiguity before final spec validation."""
+
+    def assess(self, request: str, payload: dict[str, Any]) -> AmbiguityAssessment:
+        """Return a structured ambiguity assessment for one candidate payload."""
+
+
+@dataclass(frozen=True)
+class SpecExtractionService:
+    """Coordinate preprocessing, prompt loading, extraction, and validation."""
+
+    preprocessor: RequestPreprocessor
+    prompt_repository: PromptRepository
+    payload_extractor: SpecPayloadExtractor
+    ambiguity_assessor: AmbiguityAssessor
+    validator: SpecValidator
+    prompt_name: str = EXTRACT_SPEC_PROMPT
+
+    def extract(self, request: str) -> FlinkJobSpec:
+        """Run the full extraction flow and return a validated spec."""
+        analysis = self.analyze(request)
+        if analysis.ambiguity.is_ambiguous:
+            raise AmbiguousRequestError(analysis.ambiguity)
+        return self.validator.validate(analysis.payload)
+
+    def analyze(self, request: str) -> "ExtractionAnalysis":
+        """Run preprocessing and ambiguity assessment before final validation."""
+        normalized_request = self.preprocessor.preprocess(request)
+        prompt = self.prompt_repository.load(self.prompt_name)
+        _raise_for_unsupported_request(normalized_request, {})
+        payload = self.payload_extractor.extract_payload(normalized_request, prompt)
+        _raise_for_unsupported_request(normalized_request, payload)
+        ambiguity = self.ambiguity_assessor.assess(normalized_request, payload)
+        return ExtractionAnalysis(
+            request=normalized_request,
+            payload=payload,
+            ambiguity=ambiguity,
+        )
+
+
+@dataclass(frozen=True)
+class ExtractionAnalysis:
+    """Intermediate extraction state before validation into ``FlinkJobSpec``."""
+
+    request: str
+    payload: dict[str, Any]
+    ambiguity: AmbiguityAssessment
+
+
+@dataclass(frozen=True)
+class DeterministicSpecPayloadExtractor:
+    """Deterministic extractor for the current narrow request surface."""
+
+    default_event_time_field: str = "ts"
+    default_input_event_name: str = "InputEvent"
+
+    def extract_payload(self, request: str, prompt: str) -> dict[str, Any]:
+        """Convert supported request variants into a raw structured payload."""
         del prompt
-        job_name = self._match(
-            request,
-            [
-                r"job named ([a-zA-Z0-9 _-]+?)(?: that|,|\.|$)",
-                r"called ([a-zA-Z0-9 _-]+?)(?: that|,|\.|$)",
-            ],
-            default="Generated Flink Job",
-        )
-        input_topic = self._match(
-            request,
-            [
-                r"reads from topic ([a-zA-Z0-9._-]+)",
-                r"input topic ([a-zA-Z0-9._-]+)",
-                r"consume[s]? from ([a-zA-Z0-9._-]+)",
-            ],
-            default="input-topic",
-        )
-        output_topic = self._match(
-            request,
-            [
-                r"writes to topic ([a-zA-Z0-9._-]+)",
-                r"output topic ([a-zA-Z0-9._-]+)",
-                r"publish(?:es)? to ([a-zA-Z0-9._-]+)",
-            ],
-            default="output-topic",
-        )
-        consumer_group = self._match(
-            request,
-            [
-                r"consumer group ([a-zA-Z0-9._-]+)",
-                r"group id ([a-zA-Z0-9._-]+)",
-                r"uses group ([a-zA-Z0-9._-]+)",
-            ],
-            default=f"{slugify(job_name)}-group",
-        )
-        key_field = self._match(
-            request,
-            [
-                r"keys? by ([a-zA-Z0-9._-]+)",
-                r"keyed by ([a-zA-Z0-9._-]+)",
-                r"use[s]? ([a-zA-Z0-9._-]+) as the key",
-            ],
-            default="userId",
-        )
-        rule_expression = self._match(
-            request,
-            [
-                r"(?:emits?|trigger(?:s)?) .* when (.+?)(?:\.|$)",
-                r"rule[: ]+(.+?)(?:\.|$)",
-                r"if (.+?)(?:\.|$)",
-            ],
-            default="event.value > 0",
-        )
 
-        return {
-            "template_id": "flink_kafka_rule_job",
-            "job_name": job_name.strip(),
-            "job_class_name": to_pascal_case(job_name),
-            "package_name": "com.example",
-            "input_topic": input_topic.strip(),
-            "output_topic": output_topic.strip(),
-            "consumer_group": consumer_group.strip(),
-            "key_field": key_field.strip(),
-            "rule_expression": rule_expression.strip(),
-            "bootstrap_servers": self.default_bootstrap_servers,
-            "input_schema_class": "InputEvent",
-            "output_schema_class": "OutputEvent",
+        payload: dict[str, Any] = {
+            "source_topic": self._extract_source_topic(request),
+            "event_time_field": self.default_event_time_field,
+            "input_event_name": self.default_input_event_name,
         }
 
-    def _match(self, text: str, patterns: list[str], default: str) -> str:
-        """Return the first matching regex group or a fallback value."""
+        key_by = self._extract_optional_key_by(request)
+        if key_by is not None:
+            payload["key_by"] = key_by
+
+        sink_topic = self._extract_optional_sink_topic(request)
+        if sink_topic is not None:
+            payload["sink_topic"] = sink_topic
+
+        time_window_minutes = self._extract_optional_time_window_minutes(request)
+        if time_window_minutes is not None:
+            payload["time_window_minutes"] = time_window_minutes
+
+        if self._has_conflicting_family_signals(request):
+            return payload
+
+        if self._is_windowed_aggregation_request(request):
+            aggregation_payload = self._build_windowed_aggregation_payload(
+                source_topic=payload["source_topic"],
+                key_by=key_by,
+                time_window_minutes=time_window_minutes,
+            )
+            if self._is_session_window_request(request):
+                aggregation_payload["rule_type"] = SESSION_WINDOW_AGGREGATION_RULE_TYPE
+                if key_by is not None and time_window_minutes is not None:
+                    aggregation_payload["rule_condition"] = (
+                        f"count events by {key_by} using a "
+                        f"{time_window_minutes}-minute session gap"
+                    )
+            payload.update(aggregation_payload)
+            return payload
+
+        output_event_name = self._extract_optional_output_event_name(request)
+        if output_event_name is not None:
+            payload.update(
+                self._build_keyed_rule_payload(
+                    source_topic=payload["source_topic"],
+                    sink_topic=sink_topic,
+                    key_by=key_by,
+                    output_event_name=output_event_name,
+                    time_window_minutes=time_window_minutes,
+                )
+            )
+        return payload
+
+    def _build_keyed_rule_payload(
+        self,
+        source_topic: str,
+        sink_topic: str | None,
+        key_by: str | None,
+        output_event_name: str,
+        time_window_minutes: int | None,
+    ) -> dict[str, Any]:
+        """Build the payload for the keyed rule template family."""
+        payload: dict[str, Any] = {
+            "job_family": JOB_FAMILY_KEYED_RULE,
+            "job_name": slugify(output_event_name) + "-job",
+            "source_topic": source_topic,
+            "event_time_field": self.default_event_time_field,
+            "input_event_name": self.default_input_event_name,
+            "output_event_name": output_event_name,
+            "rule_type": ALLOWED_RULE_TYPE,
+        }
+        if sink_topic is not None:
+            payload["sink_topic"] = sink_topic
+        if key_by is not None:
+            payload["key_by"] = key_by
+        if time_window_minutes is not None:
+            payload["time_window_minutes"] = time_window_minutes
+        if key_by is not None and time_window_minutes is not None:
+            payload["rule_condition"] = (
+                f"emit {output_event_name} when two keyed events match within "
+                f"{time_window_minutes} minutes"
+            )
+        return payload
+
+    def _build_windowed_aggregation_payload(
+        self,
+        source_topic: str,
+        key_by: str | None,
+        time_window_minutes: int | None,
+    ) -> dict[str, Any]:
+        """Build the payload for the windowed aggregation template family."""
+        output_event_name = to_pascal_case(f"{source_topic} count")
+        return {
+            "job_family": JOB_FAMILY_WINDOWED_AGGREGATION,
+            "job_name": slugify(f"{source_topic} count") + "-job",
+            "source_topic": source_topic,
+            **({"key_by": key_by} if key_by is not None else {}),
+            "event_time_field": self.default_event_time_field,
+            "input_event_name": self.default_input_event_name,
+            "output_event_name": output_event_name,
+            "rule_type": WINDOWED_AGGREGATION_RULE_TYPE,
+            **(
+                {
+                    "rule_condition": (
+                        f"count events by {key_by} within {time_window_minutes} minutes"
+                    )
+                }
+                if key_by is not None and time_window_minutes is not None
+                else {}
+            ),
+            **(
+                {"time_window_minutes": time_window_minutes}
+                if time_window_minutes is not None
+                else {}
+            ),
+        }
+
+    def _is_windowed_aggregation_request(self, request: str) -> bool:
+        """Return whether the request matches the supported aggregation family."""
+        return bool(
+            re.search(r"\bcount(?: events?)?\b", request, flags=re.IGNORECASE)
+            or re.search(r"\baggregate count\b", request, flags=re.IGNORECASE)
+        )
+
+    def _is_session_window_request(self, request: str) -> bool:
+        """Return whether an aggregation request explicitly asks for session windows."""
+        return bool(
+            re.search(
+                r"\bsession[\s-]+(?:windows?|gaps?)\b",
+                request,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    def _has_conflicting_family_signals(self, request: str) -> bool:
+        """Return whether the request mixes the two supported family signals."""
+        return self._is_windowed_aggregation_request(request) and bool(
+            re.search(r"\bemit\b", request, flags=re.IGNORECASE)
+        )
+
+    def _extract_source_topic(self, request: str) -> str:
+        """Extract the Kafka source topic from supported wording variants."""
+        return self._extract_required(
+            request,
+            patterns=[
+                r"read from kafka ([A-Za-z0-9._-]+)",
+                r"consume ([A-Za-z0-9._-]+) from kafka",
+                r"build a flink job reading ([A-Za-z0-9._-]+)",
+                r"read topic ([A-Za-z0-9._-]+)",
+                r"stream from kafka ([A-Za-z0-9._-]+)",
+                r"listen to kafka ([A-Za-z0-9._-]+)",
+                r"reading ([A-Za-z0-9._-]+)",
+            ],
+            error_message=(
+                "Unable to parse source_topic. Supported variants include "
+                "'Read from Kafka <topic>', 'Consume <topic> from Kafka', "
+                "'Stream from Kafka <topic>', or "
+                "'Build a Flink job reading <topic>'."
+            ),
+        )
+
+    def _extract_optional_key_by(self, request: str) -> str | None:
+        """Extract the key field when the request names one clearly."""
+        return self._extract_optional(
+            request,
+            patterns=[
+                r"key by ([A-Za-z0-9_.-]+)",
+                r"keyed by ([A-Za-z0-9_.-]+)",
+                r"keying by ([A-Za-z0-9_.-]+)",
+                r"group by ([A-Za-z0-9_.-]+)",
+                r"partition by ([A-Za-z0-9_.-]+)",
+            ],
+        )
+
+    def _extract_optional_output_event_name(self, request: str) -> str | None:
+        """Extract the output event name when the request states one clearly."""
+        value = self._extract_optional(
+            request,
+            patterns=[
+                r"emit ([A-Za-z0-9 _-]+?) events? within",
+                r"emit ([A-Za-z0-9 _-]+?) within",
+                r"emit ([A-Za-z0-9 _-]+?)(?: events?)?$",
+                r"writing ([A-Za-z0-9 _-]+?)(?: within|$)",
+            ],
+        )
+        if value is None:
+            return None
+        return to_pascal_case(value)
+
+    def _extract_optional_time_window_minutes(self, request: str) -> int | None:
+        """Extract the time window or session gap when stated numerically."""
+        value = self._extract_optional(
+            request,
+            patterns=[
+                r"within (\d+) minutes",
+                r"within (\d+) minute",
+                r"every (\d+) minutes",
+                r"every (\d+) minute",
+                r"session gap(?: of)? (\d+) minutes",
+                r"session gap(?: of)? (\d+) minute",
+                r"(\d+)[ -]minute session (?:windows?|gaps?)",
+            ],
+        )
+        if value is None:
+            return None
+        return int(value)
+
+    def _extract_optional_sink_topic(self, request: str) -> str | None:
+        """Extract the sink topic when the request names one explicitly."""
+        return self._extract_optional(
+            request,
+            patterns=[
+                r"write to kafka ([A-Za-z0-9._-]+)",
+                r"write results to kafka ([A-Za-z0-9._-]+)",
+                r"sink to kafka ([A-Za-z0-9._-]+)",
+                r"publish to kafka ([A-Za-z0-9._-]+)",
+                r"send to kafka ([A-Za-z0-9._-]+)",
+            ],
+        )
+
+    def _extract_required(
+        self,
+        text: str,
+        patterns: list[str],
+        error_message: str,
+    ) -> str:
+        """Extract the first matching value from the supplied pattern list."""
         for pattern in patterns:
             match = re.search(pattern, text, flags=re.IGNORECASE)
-            if match:
-                return match.group(1)
-        return default
+            if match is not None:
+                return match.group(1).strip()
+        raise SpecParsingError(error_message)
+
+    def _extract_optional(
+        self,
+        text: str,
+        patterns: list[str],
+    ) -> str | None:
+        """Extract the first matching value from the supplied pattern list."""
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match is not None:
+                return match.group(1).strip()
+        return None
+
+
+ProviderCallable = Callable[[str, str], str]
+
+
+@dataclass(frozen=True)
+class ProviderSpecPayloadExtractor:
+    """Provider-backed payload extractor that delegates to an injectable callable."""
+
+    call_provider: ProviderCallable
+
+    def extract_payload(self, request: str, prompt: str) -> dict[str, Any]:
+        """Call the provider, parse JSON, normalize, and return a clean payload."""
+        try:
+            raw_response = self.call_provider(request, prompt)
+        except Exception as exc:
+            raise ProviderExtractionError(f"Provider call failed: {exc}") from exc
+
+        try:
+            payload = json.loads(raw_response)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise ProviderExtractionError(f"Provider returned invalid JSON: {exc}") from exc
+
+        if not isinstance(payload, dict):
+            raise ProviderExtractionError(
+                f"Provider returned {type(payload).__name__}, expected a JSON object."
+            )
+
+        return normalize_provider_payload(payload)
+
+
+@dataclass(frozen=True)
+class ServiceBackedSpecExtractor:
+    """Expose the top-level extraction interface over the extraction service."""
+
+    extraction_service: SpecExtractionService
+
+    def extract_spec(self, request: str) -> FlinkJobSpec:
+        """Parse a request through the configured extraction service."""
+        return self.extraction_service.extract(request)
+
+
+@dataclass(frozen=True)
+class StubSpecExtractor:
+    """Backward-compatible deterministic extractor used as the default implementation."""
+
+    extraction_service: SpecExtractionService = field(init=False)
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "extraction_service", build_default_extraction_service())
+
+    def extract_spec(self, request: str, prompt: str | None = None) -> FlinkJobSpec:
+        """Parse a request using the default deterministic extraction pipeline."""
+        del prompt
+        return self.extraction_service.extract(request)
+
+
+def build_default_extraction_service() -> SpecExtractionService:
+    """Build the default deterministic extraction service pipeline."""
+    return SpecExtractionService(
+        preprocessor=SimpleRequestPreprocessor(),
+        prompt_repository=FilePromptRepository(),
+        payload_extractor=DeterministicSpecPayloadExtractor(),
+        ambiguity_assessor=CandidateAmbiguityAssessor(),
+        validator=PydanticSpecValidator(),
+    )
+
+
+def build_provider_extraction_service(
+    call_provider: ProviderCallable,
+) -> SpecExtractionService:
+    """Build a provider-backed extraction service pipeline."""
+    return SpecExtractionService(
+        preprocessor=SimpleRequestPreprocessor(),
+        prompt_repository=FilePromptRepository(),
+        payload_extractor=ProviderSpecPayloadExtractor(call_provider=call_provider),
+        ambiguity_assessor=CandidateAmbiguityAssessor(),
+        validator=PydanticSpecValidator(),
+    )
+
+
+def build_default_spec_extractor() -> SpecExtractor:
+    """Return the default deterministic extractor used by the current CLI."""
+    return StubSpecExtractor()
+
+
+def build_provider_spec_extractor(call_provider: ProviderCallable) -> SpecExtractor:
+    """Return a provider-backed extractor that validates through the same pipeline."""
+    service = build_provider_extraction_service(call_provider)
+    return ServiceBackedSpecExtractor(extraction_service=service)
+
+
+def _raise_for_unsupported_request(request: str, payload: dict[str, Any]) -> None:
+    """Raise when the request is understandable but outside supported scope."""
+    family = payload.get("job_family")
+    if isinstance(family, str) and family and family not in {
+        JOB_FAMILY_KEYED_RULE,
+        JOB_FAMILY_WINDOWED_AGGREGATION,
+    }:
+        raise UnsupportedRequestError(
+            f"job family '{family}' is outside the current supported feature scope."
+        )
+
+    lowered = request.lower()
+    unsupported_patterns = (
+        (r"\bjoin\b", "joins are not supported"),
+        (r"\benrich\b", "enrichment flows are not supported"),
+        (r"\bdeduplicat(?:e|ion)\b", "deduplication flows are not supported"),
+    )
+    for pattern, message in unsupported_patterns:
+        if re.search(pattern, lowered):
+            raise UnsupportedRequestError(message)

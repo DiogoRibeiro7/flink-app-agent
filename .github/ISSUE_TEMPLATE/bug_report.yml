@@ -1,0 +1,61 @@
+name: Bug report
+description: Report a problem with the agent, generator, or repository automation.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for broken behavior, regressions, or incorrect generated output.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the problem in one or two sentences.
+      placeholder: The CLI generated a project with an invalid Java class path.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the smallest reproducible flow.
+      placeholder: |
+        1. Run the CLI with ...
+        2. Open the generated project
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: The generated project should compile and the main Java file should match the class name.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: The generator left placeholders unresolved in the Java source.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Provide the version tag or commit SHA if known.
+      placeholder: c506508
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Share your OS, Python version, and anything else relevant.
+      placeholder: Windows 11, Python 3.11, Poetry 1.8

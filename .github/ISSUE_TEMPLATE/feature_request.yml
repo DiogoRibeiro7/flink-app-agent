@@ -1,0 +1,42 @@
+name: Feature request
+description: Propose a focused improvement to the agent, templates, or developer workflows.
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep requests concrete. This repository is intentionally small and should avoid unnecessary platform work.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What limitation or pain point are you addressing?
+      placeholder: The generator only supports one template, which blocks a second internal use case.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest change that would solve the problem.
+      placeholder: Add a second template type selected by a `template_id` field.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Mention simpler options or workarounds if any.
+      placeholder: Keep using the current template and edit the generated project manually.
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and constraints
+      description: Call out any constraints, acceptance criteria, or things that should explicitly stay out of scope.
+      placeholder: No UI, no database changes, keep the CLI surface stable.
