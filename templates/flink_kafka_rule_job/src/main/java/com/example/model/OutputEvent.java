@@ -22,9 +22,23 @@ public class {{OUTPUT_EVENT_NAME}} {
     public String toJson() {
         return String.format(
                 "{\"key\":\"%s\",\"ruleType\":\"%s\",\"ruleCondition\":\"%s\",\"matchedAt\":%d}",
-                key,
-                ruleType,
-                ruleCondition,
+                escapeJson(key),
+                escapeJson(ruleType),
+                escapeJson(ruleCondition),
                 matchedAt);
+    }
+
+    private static String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\b", "\\b")
+                .replace("\f", "\\f")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 }
