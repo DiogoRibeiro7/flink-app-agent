@@ -19,21 +19,23 @@ Each template definition records:
 - short description
 - runtime
 
-The current registry contains two active real templates:
+The current registry contains three active real templates:
 
 - `flink_kafka_rule_job`
 - `flink_windowed_aggregation_job`
+- `flink_session_window_aggregation_job`
 
 They support:
 
 - `two_events_within_window`
 - `count_by_key_window`
+- `count_by_key_session_window`
 
 ## Template Selection
 
 `TemplateRegistry.resolve_for_spec(spec)` chooses a template by checking whether the spec's `job_family` and `rule_type` both match a registered template.
 
-This keeps template lookup explicit and lets unsupported specs fail before rendering starts.
+This keeps template lookup explicit and lets unsupported specs fail before rendering starts. The two aggregation rules share the `windowed_aggregation` family but resolve to different templates so tumbling and session semantics cannot be mixed accidentally.
 
 ## Rendering
 
@@ -69,20 +71,10 @@ The current templates use:
 
 ## Current Template Shape
 
-`templates/flink_kafka_rule_job/` is a minimal Java Flink starter with:
+`templates/flink_kafka_rule_job/` provides the keyed temporal-rule starter with a `KeyedProcessFunction` scaffold.
 
-- Maven build file
-- template README
-- Flink job entrypoint
-- input and output models
-- `KeyedProcessFunction` scaffold
-- small Java test scaffold
+`templates/flink_windowed_aggregation_job/` provides keyed counts over `TumblingEventTimeWindows`.
 
-`templates/flink_windowed_aggregation_job/` is a minimal Java Flink starter with:
+`templates/flink_session_window_aggregation_job/` provides keyed counts over `EventTimeSessionWindows`; `TIME_WINDOW_MINUTES` is interpreted as the inactivity gap.
 
-- Maven build file
-- template README
-- Flink job entrypoint
-- input and output models
-- windowed count process function scaffold
-- small Java test scaffold
+All three templates include a Maven build, README, job entrypoint, simplified models, and a small Java test scaffold.
