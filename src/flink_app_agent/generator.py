@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-import re
 
 from .spec import FlinkJobSpec
 from .utils import to_pascal_case
@@ -62,9 +62,25 @@ class TemplateRenderer:
     def render_file(self, path: Path, placeholders: dict[str, str]) -> None:
         """Render one text file and reject unresolved placeholders."""
         text = path.read_text(encoding="utf-8")
-        rendered = self.render_text(text, placeholders)
+        if path.suffix == ".java":
+            rendered = self.render_java_text(text, placeholders)
+        else:
+            rendered = self.render_text(text, placeholders)
         if rendered != text:
             path.write_text(rendered, encoding="utf-8")
+
+    def render_java_text(self, text: str, placeholders: dict[str, str]) -> str:
+        """Render Java text while escaping placeholders used as string literals."""
+        rendered = text
+        for placeholder, value in placeholders.items():
+            quoted_placeholder = f'"{placeholder}"'
+            if quoted_placeholder in rendered:
+                escaped_value = _escape_java_string_literal(value)
+                rendered = rendered.replace(
+                    quoted_placeholder,
+                    f'"{escaped_value}"',
+                )
+        return self.render_text(rendered, placeholders)
 
     def render_text(self, text: str, placeholders: dict[str, str]) -> str:
         """Render text and fail if placeholders remain unresolved."""
@@ -140,6 +156,20 @@ class ProjectGenerator:
     def _list_generated_files(self, output_dir: Path) -> list[Path]:
         """Return all generated files under the output directory."""
         return sorted(path for path in output_dir.rglob("*") if path.is_file())
+
+
+def _escape_java_string_literal(value: str) -> str:
+    """Escape one value for safe insertion inside a Java string literal."""
+    replacements = {
+        "\\": "\\\\",
+        '"': '\\"',
+        "\b": "\\b",
+        "\f": "\\f",
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+    }
+    return "".join(replacements.get(character, character) for character in value)
 
 
 def build_main_class_name(job_name: str) -> str:
