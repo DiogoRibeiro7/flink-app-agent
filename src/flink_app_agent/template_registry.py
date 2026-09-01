@@ -9,6 +9,8 @@ from .spec import (
     FlinkJobSpec,
     JOB_FAMILY_KEYED_RULE,
     JOB_FAMILY_WINDOWED_AGGREGATION,
+    SESSION_WINDOW_AGGREGATION_RULE_TYPE,
+    WINDOWED_AGGREGATION_RULE_TYPE,
 )
 
 
@@ -51,8 +53,16 @@ class TemplateRegistry:
                     template_id="flink_windowed_aggregation_job",
                     template_path=templates_root / "flink_windowed_aggregation_job",
                     job_family=JOB_FAMILY_WINDOWED_AGGREGATION,
-                    supported_rule_types=frozenset({"count_by_key_window"}),
-                    description="Kafka-to-Kafka windowed aggregation job with event-time processing.",
+                    supported_rule_types=frozenset({WINDOWED_AGGREGATION_RULE_TYPE}),
+                    description="Kafka-to-Kafka tumbling-window count job with event-time processing.",
+                    runtime="Java / Apache Flink DataStream",
+                ),
+                TemplateDefinition(
+                    template_id="flink_session_window_aggregation_job",
+                    template_path=templates_root / "flink_session_window_aggregation_job",
+                    job_family=JOB_FAMILY_WINDOWED_AGGREGATION,
+                    supported_rule_types=frozenset({SESSION_WINDOW_AGGREGATION_RULE_TYPE}),
+                    description="Kafka-to-Kafka session-window count job with event-time processing.",
                     runtime="Java / Apache Flink DataStream",
                 ),
             )
