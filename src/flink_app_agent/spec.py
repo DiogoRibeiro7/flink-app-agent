@@ -12,6 +12,7 @@ FILESYSTEM_SAFE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ALLOWED_RULE_TYPE = "two_events_within_window"
 WINDOWED_AGGREGATION_RULE_TYPE = "count_by_key_window"
+SESSION_WINDOW_AGGREGATION_RULE_TYPE = "count_by_key_session_window"
 
 JOB_FAMILY_KEYED_RULE = "keyed_temporal_rule"
 JOB_FAMILY_WINDOWED_AGGREGATION = "windowed_aggregation"
@@ -24,6 +25,7 @@ class FlinkJobSpec(BaseModel):
     supported_rule_types: ClassVar[set[str]] = {
         ALLOWED_RULE_TYPE,
         WINDOWED_AGGREGATION_RULE_TYPE,
+        SESSION_WINDOW_AGGREGATION_RULE_TYPE,
     }
     supported_job_families: ClassVar[set[str]] = {
         JOB_FAMILY_KEYED_RULE,
@@ -135,7 +137,7 @@ class FlinkJobSpec(BaseModel):
 
     @classmethod
     def demo_windowed_aggregation(cls) -> "FlinkJobSpec":
-        """Return a small windowed aggregation demo spec for tests and examples."""
+        """Return a small tumbling-window aggregation demo spec for tests and examples."""
         return cls(
             job_family=JOB_FAMILY_WINDOWED_AGGREGATION,
             job_name="sensor-events-count-job",
@@ -147,6 +149,23 @@ class FlinkJobSpec(BaseModel):
             output_event_name="SensorEventsCount",
             rule_type=WINDOWED_AGGREGATION_RULE_TYPE,
             rule_condition="count events by device_id within 5 minutes",
+            time_window_minutes=5,
+        )
+
+    @classmethod
+    def demo_session_window_aggregation(cls) -> "FlinkJobSpec":
+        """Return a keyed session-window aggregation demo spec."""
+        return cls(
+            job_family=JOB_FAMILY_WINDOWED_AGGREGATION,
+            job_name="sensor-events-session-count-job",
+            source_topic="sensor-events",
+            sink_topic="session-counts",
+            key_by="device_id",
+            event_time_field="ts",
+            input_event_name="InputEvent",
+            output_event_name="SensorEventsCount",
+            rule_type=SESSION_WINDOW_AGGREGATION_RULE_TYPE,
+            rule_condition="count events by device_id using a 5-minute session gap",
             time_window_minutes=5,
         )
 
