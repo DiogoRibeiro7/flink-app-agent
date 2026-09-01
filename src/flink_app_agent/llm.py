@@ -134,7 +134,7 @@ class SpecExtractionService:
         return self.validator.validate(analysis.payload)
 
     def analyze(self, request: str) -> "ExtractionAnalysis":
-        """Run preprocessing and ambiguity assessment before final spec validation."""
+        """Run preprocessing and ambiguity assessment before final validation."""
         normalized_request = self.preprocessor.preprocess(request)
         prompt = self.prompt_repository.load(self.prompt_name)
         _raise_for_unsupported_request(normalized_request, {})
@@ -293,7 +293,7 @@ class DeterministicSpecPayloadExtractor:
         """Return whether an aggregation request explicitly asks for session windows."""
         return bool(
             re.search(
-                r"\bsession(?:\s+window)?s?\b|\bsession\s+gap\b",
+                r"\bsession[\s-]+(?:windows?|gaps?)\b",
                 request,
                 flags=re.IGNORECASE,
             )
@@ -365,7 +365,7 @@ class DeterministicSpecPayloadExtractor:
                 r"every (\d+) minute",
                 r"session gap(?: of)? (\d+) minutes",
                 r"session gap(?: of)? (\d+) minute",
-                r"(\d+)[ -]minute session windows?",
+                r"(\d+)[ -]minute session (?:windows?|gaps?)",
             ],
         )
         if value is None:
@@ -430,9 +430,7 @@ class ProviderSpecPayloadExtractor:
         try:
             payload = json.loads(raw_response)
         except (json.JSONDecodeError, TypeError) as exc:
-            raise ProviderExtractionError(
-                f"Provider returned invalid JSON: {exc}"
-            ) from exc
+            raise ProviderExtractionError(f"Provider returned invalid JSON: {exc}") from exc
 
         if not isinstance(payload, dict):
             raise ProviderExtractionError(
@@ -497,9 +495,7 @@ def build_default_spec_extractor() -> SpecExtractor:
     return StubSpecExtractor()
 
 
-def build_provider_spec_extractor(
-    call_provider: ProviderCallable,
-) -> SpecExtractor:
+def build_provider_spec_extractor(call_provider: ProviderCallable) -> SpecExtractor:
     """Return a provider-backed extractor that validates through the same pipeline."""
     service = build_provider_extraction_service(call_provider)
     return ServiceBackedSpecExtractor(extraction_service=service)
