@@ -17,6 +17,7 @@ from .spec import (
     FlinkJobSpec,
     JOB_FAMILY_KEYED_RULE,
     JOB_FAMILY_WINDOWED_AGGREGATION,
+    SESSION_WINDOW_AGGREGATION_RULE_TYPE,
     WINDOWED_AGGREGATION_RULE_TYPE,
 )
 from .utils import slugify, to_pascal_case
@@ -133,7 +134,7 @@ class SpecExtractionService:
         return self.validator.validate(analysis.payload)
 
     def analyze(self, request: str) -> "ExtractionAnalysis":
-        """Run preprocessing and ambiguity assessment before final validation."""
+        """Run preprocessing and ambiguity assessment before final spec validation."""
         normalized_request = self.preprocessor.preprocess(request)
         prompt = self.prompt_repository.load(self.prompt_name)
         _raise_for_unsupported_request(normalized_request, {})
@@ -167,8 +168,6 @@ class DeterministicSpecPayloadExtractor:
         """Convert supported request variants into a raw structured payload."""
         del prompt
 
-        # TODO: Replace this regex-based implementation with a real provider-backed call.
-        # TODO: Pass the contents of extract_spec.md into the future provider request.
         payload: dict[str, Any] = {
             "source_topic": self._extract_source_topic(request),
             "event_time_field": self.default_event_time_field,
@@ -191,13 +190,19 @@ class DeterministicSpecPayloadExtractor:
             return payload
 
         if self._is_windowed_aggregation_request(request):
-            payload.update(
-                self._build_windowed_aggregation_payload(
-                    source_topic=payload["source_topic"],
-                    key_by=key_by,
-                    time_window_minutes=time_window_minutes,
-                )
+            aggregation_payload = self._build_windowed_aggregation_payload(
+                source_topic=payload["source_topic"],
+                key_by=key_by,
+                time_window_minutes=time_window_minutes,
             )
+            if self._is_session_window_request(request):
+                aggregation_payload["rule_type"] = SESSION_WINDOW_AGGREGATION_RULE_TYPE
+                if key_by is not None and time_window_minutes is not None:
+                    aggregation_payload["rule_condition"] = (
+                        f"count events by {key_by} using a "
+                        f"{time_window_minutes}-minute session gap"
+                    )
+            payload.update(aggregation_payload)
             return payload
 
         output_event_name = self._extract_optional_output_event_name(request)
@@ -284,6 +289,16 @@ class DeterministicSpecPayloadExtractor:
             or re.search(r"\baggregate count\b", request, flags=re.IGNORECASE)
         )
 
+    def _is_session_window_request(self, request: str) -> bool:
+        """Return whether an aggregation request explicitly asks for session windows."""
+        return bool(
+            re.search(
+                r"\bsession(?:\s+window)?s?\b|\bsession\s+gap\b",
+                request,
+                flags=re.IGNORECASE,
+            )
+        )
+
     def _has_conflicting_family_signals(self, request: str) -> bool:
         """Return whether the request mixes the two supported family signals."""
         return self._is_windowed_aggregation_request(request) and bool(
@@ -340,7 +355,7 @@ class DeterministicSpecPayloadExtractor:
         return to_pascal_case(value)
 
     def _extract_optional_time_window_minutes(self, request: str) -> int | None:
-        """Extract the time window when the request states a numeric value."""
+        """Extract the time window or session gap when stated numerically."""
         value = self._extract_optional(
             request,
             patterns=[
@@ -348,6 +363,9 @@ class DeterministicSpecPayloadExtractor:
                 r"within (\d+) minute",
                 r"every (\d+) minutes",
                 r"every (\d+) minute",
+                r"session gap(?: of)? (\d+) minutes",
+                r"session gap(?: of)? (\d+) minute",
+                r"(\d+)[ -]minute session windows?",
             ],
         )
         if value is None:
@@ -393,21 +411,12 @@ class DeterministicSpecPayloadExtractor:
         return None
 
 
-# Type alias for the injectable provider callable.
-# Signature: (request_text, prompt_text) -> JSON string containing spec payload.
 ProviderCallable = Callable[[str, str], str]
 
 
 @dataclass(frozen=True)
 class ProviderSpecPayloadExtractor:
-    """Provider-backed payload extractor that delegates to an injectable callable.
-
-    The ``call_provider`` callable receives the preprocessed request and the
-    extraction prompt, and must return a JSON string whose keys match the
-    ``FlinkJobSpec`` fields. All provider-specific concerns (API keys, HTTP,
-    SDK usage) live inside that callable — this class handles JSON parsing,
-    structured output normalization, and error wrapping.
-    """
+    """Provider-backed payload extractor that delegates to an injectable callable."""
 
     call_provider: ProviderCallable
 
@@ -416,9 +425,7 @@ class ProviderSpecPayloadExtractor:
         try:
             raw_response = self.call_provider(request, prompt)
         except Exception as exc:
-            raise ProviderExtractionError(
-                f"Provider call failed: {exc}"
-            ) from exc
+            raise ProviderExtractionError(f"Provider call failed: {exc}") from exc
 
         try:
             payload = json.loads(raw_response)
@@ -475,18 +482,11 @@ def build_default_extraction_service() -> SpecExtractionService:
 def build_provider_extraction_service(
     call_provider: ProviderCallable,
 ) -> SpecExtractionService:
-    """Build a provider-backed extraction service pipeline.
-
-    The ``call_provider`` callable handles all provider-specific concerns.
-    Preprocessing, prompt loading, and validation are still handled by the
-    same shared components used by the deterministic path.
-    """
+    """Build a provider-backed extraction service pipeline."""
     return SpecExtractionService(
         preprocessor=SimpleRequestPreprocessor(),
         prompt_repository=FilePromptRepository(),
-        payload_extractor=ProviderSpecPayloadExtractor(
-            call_provider=call_provider,
-        ),
+        payload_extractor=ProviderSpecPayloadExtractor(call_provider=call_provider),
         ambiguity_assessor=CandidateAmbiguityAssessor(),
         validator=PydanticSpecValidator(),
     )
@@ -521,7 +521,6 @@ def _raise_for_unsupported_request(request: str, payload: dict[str, Any]) -> Non
         (r"\bjoin\b", "joins are not supported"),
         (r"\benrich\b", "enrichment flows are not supported"),
         (r"\bdeduplicat(?:e|ion)\b", "deduplication flows are not supported"),
-        (r"\bsession window\b", "session windows are not supported"),
     )
     for pattern, message in unsupported_patterns:
         if re.search(pattern, lowered):
