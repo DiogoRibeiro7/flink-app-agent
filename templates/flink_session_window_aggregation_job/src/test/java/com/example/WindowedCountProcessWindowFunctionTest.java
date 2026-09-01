@@ -22,4 +22,20 @@ public class WindowedCountProcessWindowFunctionTest {
         Assertions.assertTrue(payload.contains("{{RULE_TYPE}}"));
         Assertions.assertTrue(payload.contains("{{RULE_CONDITION}}"));
     }
+
+    @Test
+    void outputEventEscapesJsonStringValues() {
+        {{OUTPUT_EVENT_NAME}} event = new {{OUTPUT_EVENT_NAME}}(
+                "device-\"1\\west\nline",
+                0L,
+                300000L,
+                1L,
+                "{{RULE_TYPE}}",
+                "quoted \"description\"\\path\nnext");
+
+        String payload = event.toJson();
+
+        Assertions.assertTrue(payload.contains("device-\\\"1\\\\west\\nline"));
+        Assertions.assertTrue(payload.contains("quoted \\\"description\\\"\\\\path\\nnext"));
+    }
 }
