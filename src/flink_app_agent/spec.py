@@ -5,11 +5,24 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 
 FILESYSTEM_SAFE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+JAVA_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
+JAVA_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char",
+        "class", "const", "continue", "default", "do", "double", "else", "enum",
+        "extends", "final", "finally", "float", "for", "goto", "if", "implements",
+        "import", "instanceof", "int", "interface", "long", "native", "new", "package",
+        "private", "protected", "public", "return", "short", "static", "strictfp",
+        "super", "switch", "synchronized", "this", "throw", "throws", "transient",
+        "try", "void", "volatile", "while", "true", "false", "null", "record",
+        "sealed", "permits", "yield", "var",
+    }
+)
 ALLOWED_RULE_TYPE = "two_events_within_window"
 WINDOWED_AGGREGATION_RULE_TYPE = "count_by_key_window"
 SESSION_WINDOW_AGGREGATION_RULE_TYPE = "count_by_key_session_window"
@@ -57,11 +70,7 @@ class FlinkJobSpec(BaseModel):
             )
         return normalized
 
-    @field_validator(
-        "source_topic",
-        "sink_topic",
-        "rule_condition",
-    )
+    @field_validator("source_topic", "sink_topic", "rule_condition")
     @classmethod
     def validate_not_empty(cls, value: str, info: ValidationInfo) -> str:
         """Reject blank required string fields."""
@@ -89,6 +98,8 @@ class FlinkJobSpec(BaseModel):
         normalized = cls.normalize_class_name(value)
         if not normalized:
             raise ValueError(f"{info.field_name} must not be empty.")
+        if not JAVA_IDENTIFIER_PATTERN.fullmatch(normalized) or normalized in JAVA_KEYWORDS:
+            raise ValueError(f"{info.field_name} must be a valid non-keyword Java identifier.")
         return normalized
 
     @field_validator("job_family")
@@ -97,9 +108,7 @@ class FlinkJobSpec(BaseModel):
         """Allow only the currently supported job families."""
         if value not in cls.supported_job_families:
             supported = ", ".join(sorted(cls.supported_job_families))
-            raise ValueError(
-                f"job_family must be one of: {supported}."
-            )
+            raise ValueError(f"job_family must be one of: {supported}.")
         return value
 
     @field_validator("rule_type")
@@ -108,10 +117,15 @@ class FlinkJobSpec(BaseModel):
         """Allow only the currently supported rule types."""
         if value not in cls.supported_rule_types:
             supported_rule_types = ", ".join(sorted(cls.supported_rule_types))
-            raise ValueError(
-                f"rule_type must be one of: {supported_rule_types}."
-            )
+            raise ValueError(f"rule_type must be one of: {supported_rule_types}.")
         return value
+
+    @model_validator(mode="after")
+    def validate_distinct_event_class_names(self) -> "FlinkJobSpec":
+        """Require input and output model classes to remain distinct after normalization."""
+        if self.input_event_name == self.output_event_name:
+            raise ValueError("input_event_name and output_event_name must be different Java class names.")
+        return self
 
     @classmethod
     def from_llm_payload(cls, payload: dict[str, Any]) -> "FlinkJobSpec":
