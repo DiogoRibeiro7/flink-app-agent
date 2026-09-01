@@ -26,11 +26,25 @@ public class {{OUTPUT_EVENT_NAME}} {
     public String toJson() {
         return String.format(
                 "{\"key\":\"%s\",\"windowStart\":%d,\"windowEnd\":%d,\"count\":%d,\"aggregationType\":\"%s\",\"aggregationDescription\":\"%s\"}",
-                key,
+                escapeJson(key),
                 windowStart,
                 windowEnd,
                 count,
-                aggregationType,
-                aggregationDescription);
+                escapeJson(aggregationType),
+                escapeJson(aggregationDescription));
+    }
+
+    private static String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\b", "\\b")
+                .replace("\f", "\\f")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 }
