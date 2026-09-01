@@ -23,6 +23,16 @@ SAFE_TEXT_EXTENSIONS: frozenset[str] = frozenset(
     }
 )
 PLACEHOLDER_PATTERN = re.compile(r"\{\{[A-Z0-9_]+\}\}")
+MAIN_CLASS_DECLARATION_PATTERN = re.compile(
+    r"(?m)^(?P<indent>\s*)"
+    r"(?P<modifiers>(?:(?:public|protected|private|abstract|final|strictfp|sealed|non-sealed)\s+)*)"
+    r"class\s+JobTemplate\b"
+)
+MAIN_CONSTRUCTOR_DECLARATION_PATTERN = re.compile(
+    r"(?m)^(?P<indent>\s*)"
+    r"(?P<modifier>(?:(?:public|protected|private)\s+)?)"
+    r"JobTemplate(?P<suffix>\s*\()"
+)
 
 
 class TemplateRenderingError(ValueError):
@@ -151,15 +161,36 @@ class ProjectGenerator:
                 continue
 
             if path.name == "JobTemplate.java":
-                source = path.read_text(encoding="utf-8")
-                source = source.replace("final class JobTemplate", f"final class {main_class_name}")
-                source = source.replace("private JobTemplate()", f"private {main_class_name}()")
-                path.write_text(source, encoding="utf-8")
+                self._rewrite_main_class(path, main_class_name)
 
             target_path = path.with_name(new_name)
             if target_path.exists():
                 raise FileExistsError(f"Cannot rename file because target already exists: {target_path}")
             path.rename(target_path)
+
+    def _rewrite_main_class(self, path: Path, main_class_name: str) -> None:
+        """Rewrite the template main class and fail if its declaration is not recognized."""
+        source = path.read_text(encoding="utf-8")
+        rewritten, declaration_count = MAIN_CLASS_DECLARATION_PATTERN.subn(
+            lambda match: (
+                f"{match.group('indent')}{match.group('modifiers')}class {main_class_name}"
+            ),
+            source,
+            count=1,
+        )
+        if declaration_count != 1:
+            raise TemplateRenderingError(
+                "JobTemplate.java must contain one recognizable 'class JobTemplate' declaration."
+            )
+
+        rewritten = MAIN_CONSTRUCTOR_DECLARATION_PATTERN.sub(
+            lambda match: (
+                f"{match.group('indent')}{match.group('modifier')}"
+                f"{main_class_name}{match.group('suffix')}"
+            ),
+            rewritten,
+        )
+        path.write_text(rewritten, encoding="utf-8")
 
     def _list_generated_files(self, output_dir: Path) -> list[Path]:
         """Return all generated files under the output directory."""
