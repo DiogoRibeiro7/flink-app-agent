@@ -28,6 +28,7 @@ from .spec import (
     ALLOWED_RULE_TYPE,
     JOB_FAMILY_KEYED_RULE,
     JOB_FAMILY_WINDOWED_AGGREGATION,
+    SESSION_WINDOW_AGGREGATION_RULE_TYPE,
     WINDOWED_AGGREGATION_RULE_TYPE,
 )
 
@@ -71,9 +72,14 @@ FIELD_ALIASES: dict[str, str] = {
     "windowMinutes": "time_window_minutes",
 }
 
-VALID_FAMILY_RULE_PAIRS: dict[str, str] = {
-    JOB_FAMILY_KEYED_RULE: ALLOWED_RULE_TYPE,
-    JOB_FAMILY_WINDOWED_AGGREGATION: WINDOWED_AGGREGATION_RULE_TYPE,
+VALID_FAMILY_RULE_PAIRS: dict[str, frozenset[str]] = {
+    JOB_FAMILY_KEYED_RULE: frozenset({ALLOWED_RULE_TYPE}),
+    JOB_FAMILY_WINDOWED_AGGREGATION: frozenset(
+        {
+            WINDOWED_AGGREGATION_RULE_TYPE,
+            SESSION_WINDOW_AGGREGATION_RULE_TYPE,
+        }
+    ),
 }
 
 
@@ -148,9 +154,10 @@ def _check_family_rule_coherence(payload: dict[str, Any]) -> None:
     family = payload.get("job_family", "")
     rule_type = payload.get("rule_type", "")
 
-    expected_rule = VALID_FAMILY_RULE_PAIRS.get(family)
-    if expected_rule is not None and rule_type != expected_rule:
+    allowed_rules = VALID_FAMILY_RULE_PAIRS.get(family)
+    if allowed_rules is not None and rule_type not in allowed_rules:
+        allowed_text = ", ".join(sorted(allowed_rules))
         raise ProviderExtractionError(
             f"Incoherent provider output: job_family '{family}' "
-            f"requires rule_type '{expected_rule}', got '{rule_type}'."
+            f"requires rule_type in {{{allowed_text}}}, got '{rule_type}'."
         )

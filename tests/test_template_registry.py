@@ -40,7 +40,7 @@ def test_template_registry_rejects_unknown_template_identifier(tmp_path: Path) -
 
 
 def test_template_registry_resolves_windowed_aggregation_template(tmp_path: Path) -> None:
-    """A windowed aggregation spec should resolve the aggregation template."""
+    """A tumbling-window aggregation spec should resolve its dedicated template."""
     registry = TemplateRegistry.from_root(tmp_path)
 
     template = registry.resolve_for_spec(FlinkJobSpec.demo_windowed_aggregation())
@@ -48,7 +48,7 @@ def test_template_registry_resolves_windowed_aggregation_template(tmp_path: Path
     assert template.template_id == "flink_windowed_aggregation_job"
     assert template.job_family == JOB_FAMILY_WINDOWED_AGGREGATION
     assert template.template_path == tmp_path / "flink_windowed_aggregation_job"
-    assert template.description == "Kafka-to-Kafka windowed aggregation job with event-time processing."
+    assert template.description == "Kafka-to-Kafka tumbling-window count job with event-time processing."
     assert template.runtime == "Java / Apache Flink DataStream"
 
 

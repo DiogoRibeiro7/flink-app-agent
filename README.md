@@ -18,7 +18,7 @@ Current scope is deliberately narrow:
 - one strict spec model with explicit job family support
 - one deterministic extractor recognizing two job families
 - one optional provider-backed extraction path selected through the CLI or environment
-- two registered real templates (keyed temporal rule and windowed aggregation)
+- three registered real templates: keyed temporal rule, tumbling-window aggregation, and session-window aggregation
 - one local generator with family-aware placeholder rendering
 - one deterministic repair loop for safe fixups (trailing placeholders, whitespace, newlines)
 - one deterministic review step with family-specific structural checks
@@ -91,7 +91,8 @@ flink-app-agent/
 │           └── generate_code.md
 ├── templates/
 │   ├── flink_kafka_rule_job/
-│   └── flink_windowed_aggregation_job/
+│   ├── flink_windowed_aggregation_job/
+│   └── flink_session_window_aggregation_job/
 └── tests/
 ```
 
@@ -108,6 +109,22 @@ Run the default generation flow:
 ```bash
 poetry run flink-app-agent \
   --request "Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, write to Kafka inferred-events" \
+  --output ./out
+```
+
+Generate a tumbling-window aggregation:
+
+```bash
+poetry run flink-app-agent \
+  --request "Read from Kafka sensor-events, group by device_id, count events within 5 minutes, write to Kafka aggregated-events" \
+  --output ./out
+```
+
+Generate a keyed event-time session aggregation:
+
+```bash
+poetry run flink-app-agent \
+  --request "Read from Kafka sensor-events, group by device_id, count events in 5-minute session windows, write to Kafka session-counts" \
   --output ./out
 ```
 
@@ -173,12 +190,18 @@ Read from Kafka sensor-events, key by user_id, emit BED_OUT within 20 minutes, w
 Also supported in the current narrow scope:
 
 ```text
-Read from Kafka sensor-events, group by device_id, count events within 5 minutes
+Read from Kafka sensor-events, group by device_id, count events within 5 minutes, write to Kafka aggregated-events
 ```
+
+```text
+Read from Kafka sensor-events, group by device_id, count events in 5-minute session windows, write to Kafka session-counts
+```
+
+For the session form, `time_window_minutes` is the inactivity gap used by Flink's event-time session-window assigner. It is not a fixed window width.
 
 ## Example Output
 
-For that request, the current extractor produces a spec like:
+For the keyed temporal rule request, the current extractor produces a spec like:
 
 ```json
 {
@@ -291,7 +314,8 @@ Current limitations are explicit:
 - no Docker or deployment workflow
 - compile verification is opt-in and requires Maven on PATH
 - only two job families (keyed temporal rule and windowed aggregation)
-- only two supported rule types
+- only three supported rule types
+- aggregation support is limited to keyed counts over tumbling or event-time session windows
 - deterministic parsing is still pattern-based and remains the default
 - provider-backed extraction is optional and only supported through an injected callable boundary
 - provider-backed output is accepted only if it survives normalization, quality gating, ambiguity handling, and strict spec validation
@@ -299,7 +323,7 @@ Current limitations are explicit:
 - ambiguity is handled explicitly, but not solved interactively
 - repairs are intentionally limited to safe text cleanup only (no model-based patching)
 - safe defaults are narrow, policy-controlled, and always reported
-- no joins, enrichment, or sessionization families yet
+- no joins, enrichment, deduplication, sliding windows, or broad sessionization workflow family
 
 ## Roadmap
 

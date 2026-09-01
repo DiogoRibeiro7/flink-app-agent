@@ -58,11 +58,17 @@ These are normalized into PascalCase class names.
 - `rule_type` currently allows:
   - `two_events_within_window`
   - `count_by_key_window`
+  - `count_by_key_session_window`
 - `rule_condition` must be non-empty
+
+`count_by_key_window` maps to a tumbling event-time window. `count_by_key_session_window` maps to a keyed event-time session window.
 
 ### Window field
 
 - `time_window_minutes` must be strictly positive
+- for `two_events_within_window`, it is the matching horizon
+- for `count_by_key_window`, it is the tumbling-window width
+- for `count_by_key_session_window`, it is the inactivity gap that closes a session
 
 ## Why The Spec Is Strict
 

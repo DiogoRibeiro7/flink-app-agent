@@ -7,12 +7,7 @@ from pathlib import Path
 
 from .constants import GENERATION_REPORT_FILENAME
 from .generator import PLACEHOLDER_PATTERN, SAFE_TEXT_EXTENSIONS, build_main_class_name
-from .spec import (
-    FlinkJobSpec,
-    JOB_FAMILY_KEYED_RULE,
-    JOB_FAMILY_WINDOWED_AGGREGATION,
-    WINDOWED_AGGREGATION_RULE_TYPE,
-)
+from .spec import FlinkJobSpec, JOB_FAMILY_WINDOWED_AGGREGATION
 
 
 REPORT_FILENAME = GENERATION_REPORT_FILENAME
@@ -152,8 +147,7 @@ class StructuralReviewer:
     ) -> None:
         """Check that the expected family-specific function file exists."""
         functions_dir = (
-            output_dir / "src" / "main" / "java" / "com"
-            / "example" / "functions"
+            output_dir / "src" / "main" / "java" / "com" / "example" / "functions"
         )
         if spec.job_family == JOB_FAMILY_WINDOWED_AGGREGATION:
             expected_name = "WindowedCountProcessWindowFunction.java"
@@ -161,13 +155,10 @@ class StructuralReviewer:
             expected_name = "RuleProcessFunction.java"
         function_file = functions_dir / expected_name
         if function_file.exists():
-            result.passed_checks.append(
-                "Family-specific function file exists."
-            )
+            result.passed_checks.append("Family-specific function file exists.")
         else:
             result.failed_checks.append(
-                f"Family-specific function file is missing: "
-                f"{function_file}"
+                f"Family-specific function file is missing: {function_file}"
             )
 
     def _check_job_family_in_readme(
@@ -194,7 +185,7 @@ class StructuralReviewer:
         result: ReviewResult,
     ) -> None:
         """Record a warning if the generated test scaffold is missing."""
-        if spec.rule_type == WINDOWED_AGGREGATION_RULE_TYPE:
+        if spec.job_family == JOB_FAMILY_WINDOWED_AGGREGATION:
             test_file_name = "WindowedCountProcessWindowFunctionTest.java"
         else:
             test_file_name = "RuleProcessFunctionTest.java"
