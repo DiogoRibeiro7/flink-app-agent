@@ -33,6 +33,10 @@ MAIN_CONSTRUCTOR_DECLARATION_PATTERN = re.compile(
     r"(?P<modifier>(?:(?:public|protected|private)\s+)?)"
     r"JobTemplate(?P<suffix>\s*\()"
 )
+RESIDUAL_MAIN_CONSTRUCTOR_PATTERN = re.compile(
+    r"\bJobTemplate(?:\s|/\*.*?\*/|//[^\n]*(?:\n|$))*\(",
+    flags=re.DOTALL,
+)
 
 
 class TemplateRenderingError(ValueError):
@@ -169,7 +173,7 @@ class ProjectGenerator:
             path.rename(target_path)
 
     def _rewrite_main_class(self, path: Path, main_class_name: str) -> None:
-        """Rewrite the template main class and fail if its declaration is not recognized."""
+        """Rewrite the template main class and fail if any old constructor remains."""
         source = path.read_text(encoding="utf-8")
         rewritten, declaration_count = MAIN_CLASS_DECLARATION_PATTERN.subn(
             lambda match: (
@@ -190,6 +194,10 @@ class ProjectGenerator:
             ),
             rewritten,
         )
+        if RESIDUAL_MAIN_CONSTRUCTOR_PATTERN.search(rewritten):
+            raise TemplateRenderingError(
+                "JobTemplate.java contains an unrecognized 'JobTemplate' constructor declaration."
+            )
         path.write_text(rewritten, encoding="utf-8")
 
     def _list_generated_files(self, output_dir: Path) -> list[Path]:
