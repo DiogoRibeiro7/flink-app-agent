@@ -70,3 +70,20 @@ def test_java_string_placeholders_are_escaped(tmp_path: Path) -> None:
     assert '\\"quoted\\"' in job_text
     assert '\\\\path' in job_text
     assert '\\nnext line' in job_text
+
+
+def test_all_output_models_escape_arbitrary_json_control_characters() -> None:
+    """Every generated output model must encode controls below U+0020 as JSON escapes."""
+    repository_root = Path(__file__).resolve().parents[1]
+    model_paths = (
+        repository_root / "templates/flink_kafka_rule_job/src/main/java/com/example/model/OutputEvent.java",
+        repository_root
+        / "templates/flink_windowed_aggregation_job/src/main/java/com/example/model/OutputEvent.java",
+        repository_root
+        / "templates/flink_session_window_aggregation_job/src/main/java/com/example/model/OutputEvent.java",
+    )
+
+    for model_path in model_paths:
+        model_text = model_path.read_text(encoding="utf-8")
+        assert "character < 0x20" in model_text
+        assert 'String.format("\\\\u%04x", (int) character)' in model_text
