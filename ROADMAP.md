@@ -1,10 +1,10 @@
 # Roadmap
 
-This roadmap reflects the repository after the current `v0.7` changes. It stays aligned with the constrained-tool vision: a small local generator with explicit interpretation boundaries, strict validation, limited template scope, and machine-readable reporting.
+This roadmap reflects the repository at the `v0.8` milestone. The project remains a constrained local generator with explicit interpretation boundaries, strict validation, limited template scope, and machine-readable reporting.
 
-## Current v0.7
+## Current v0.8
 
-`v0.7` is the current baseline.
+`v0.8` is the current baseline.
 
 The repository now provides:
 
@@ -13,49 +13,39 @@ The repository now provides:
 - explicit invalid vs ambiguous vs unsupported request taxonomy
 - provider normalization plus provider quality gating before final validation
 - an ambiguity assessment stage before final spec creation
-- a conservative ambiguity policy model with explicit safe-default behavior for low-risk cases only
+- a conservative ambiguity policy with explicit safe-default behavior for low-risk cases only
+- clarification questions for a narrow set of recoverable ambiguity cases
 - explicit fallback behavior from provider-backed extraction to deterministic extraction when configured
 - trust and provenance reporting in both CLI summaries and `generation_report.json`
 - two supported job families with explicit template resolution
-- deterministic project generation from local templates
+- keyed temporal-rule generation
+- keyed tumbling event-time count aggregation
+- keyed event-time session-window count aggregation with an explicit inactivity gap
 - deterministic repair, structural review, and optional compile-only verification
-- fixture-driven and end-to-end coverage for trust, ambiguity, provider degradation, and fallback paths
+- fixture-driven and end-to-end coverage for trust, ambiguity, provider degradation, fallback, and window-template selection
 - documentation that treats provider-backed extraction as optional and bounded, not authoritative
 
-What `v0.7` does not claim:
+What `v0.8` does not claim:
 
 - a built-in real provider integration
 - broad natural-language understanding
-- many template families
-- interactive clarification flows
+- broad Flink job-family coverage
 - autonomous repair or autonomous design
 - production deployment workflows
+- arbitrary sessionization, joins, enrichment, deduplication, or sliding windows
 
-## Likely v0.8
+## Next Stabilization Work
 
-The next likely version should continue tightening interpretation boundaries and generation quality rather than broadening the tool dramatically.
+The next work should improve verification and release discipline rather than add many new Flink shapes at once.
 
-Most likely themes:
+Likely themes:
 
-- a limited interactive clarification flow for a very small set of recoverable ambiguity cases
-- one more carefully chosen template family or slightly richer aggregation support if it fits the existing spec/template model
-- stronger deterministic repair coverage that stays safe, local, and auditable
-- stronger compile-time verification feedback and failure summaries
-- better boundaries around which defaults are acceptable and which ambiguities must still fail
-
-Possible `v0.8` additions if they stay small and well-bounded:
-
-- more explicit compile/report consistency checks
-- stricter fixture coverage for pre-generation failure reports
-- slightly better negative coverage for provider-backed low-quality output
-
-Non-goals for `v0.8`:
-
-- many template families at once
-- broad LLM-style planning or free-form generation
-- hosted services, telemetry, or remote reporting
-- provider-specific logic leaking into generation or review
-- default inference that silently crosses interpretation boundaries
+- stronger compile-time error summaries in reports
+- optional execution of generated Java tests in addition to compile-only verification
+- stricter generated-artifact completeness checks per template
+- more explicit compatibility tests across extraction mode, rule type, and template selection
+- tighter fixture coverage for pre-generation failures and low-quality provider output
+- release synchronization between `develop` and `main`
 
 ## v1.0 Target
 
@@ -81,8 +71,6 @@ Likely `v1.0` characteristics:
 
 ## Later Optional Directions
 
-These directions are plausible later, but they are not current commitments.
-
 ### Optional provider work
 
 - support one real provider integration behind the current adapter boundary
@@ -91,15 +79,15 @@ These directions are plausible later, but they are not current commitments.
 
 ### Optional verification work
 
-- optional generated-project test execution in addition to compile-only verification
+- optional generated-project test execution
 - stronger compile-time error summarization in reports
 - stricter artifact completeness checks per template family
 
 ### Optional template growth
 
-- one or two more focused template families, added slowly
+- sliding event-time counts if a second duration field can be introduced without weakening the spec boundary
+- one or two additional focused template families, added slowly
 - richer template metadata and compatibility constraints
-- slightly broader aggregation variants if they remain compatible with the small spec model
 
 ### Optional delivery work
 
@@ -107,8 +95,6 @@ These directions are plausible later, but they are not current commitments.
 - small local helpers around handoff or packaging steps
 
 ## Out Of Scope For Now
-
-The following are still not near-term priorities:
 
 - UI development
 - web APIs
@@ -121,7 +107,7 @@ The following are still not near-term priorities:
 
 ## Compact Stage Summary
 
-- `v0.7`: explicit ambiguity handling, request taxonomy, provider quality gating, safe-default policy boundaries, trust/provenance reporting, and fixture coverage for degraded extraction paths
-- `v0.8`: limited clarification for narrow recoverable ambiguity, one careful template or richer aggregation step, stronger deterministic repair coverage, stronger compile feedback, and tighter default-inference boundaries
-- `v1.0`: stable multi-family generation, optional provider-backed extraction under strict trust controls, clear ambiguity guarantees, and verified scaffold artifacts
-- later: selective provider, verification, template, and packaging improvements if they preserve the constrained-tool shape
+- `v0.7`: interpretation safety, request taxonomy, provider quality gating, safe-default policy boundaries, trust/provenance reporting, and degraded-extraction fixtures
+- `v0.8`: clarification questions, stronger deterministic repair coverage, three explicit templates, and keyed event-time session-window aggregation
+- `v1.0`: stable multi-family generation, strict trust controls, stronger verification, clear ambiguity guarantees, and release synchronization
+- later: selective provider, template, verification, and packaging improvements if they preserve the constrained-tool shape
