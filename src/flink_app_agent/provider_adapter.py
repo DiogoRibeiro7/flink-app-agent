@@ -103,7 +103,7 @@ class ProviderAdapter:
         Provider responses may wrap JSON in markdown fences or surround it
         with explanatory prose. Parsing is JSON-aware rather than based on a
         greedy brace regular expression, so nested objects remain intact.
-        Multiple top-level JSON objects are rejected as ambiguous output.
+        Multiple top-level JSON values are rejected as ambiguous output.
         """
         cleaned = _strip_markdown_fences(raw_response).strip()
         return _extract_single_json_object(cleaned)
@@ -136,23 +136,23 @@ def _strip_markdown_fences(text: str) -> str:
 def _extract_single_json_object(text: str) -> str:
     """Return the only top-level JSON object embedded in ``text``."""
     decoder = json.JSONDecoder()
-    candidates: list[str] = []
+    candidates: list[tuple[object, str]] = []
     index = 0
 
     while index < len(text):
-        start = text.find("{", index)
-        if start < 0:
+        object_start = text.find("{", index)
+        array_start = text.find("[", index)
+        starts = [start for start in (object_start, array_start) if start >= 0]
+        if not starts:
             break
+        start = min(starts)
         try:
             value, consumed = decoder.raw_decode(text[start:])
         except json.JSONDecodeError:
             index = start + 1
             continue
-        if isinstance(value, dict):
-            candidates.append(text[start : start + consumed].strip())
-            index = start + consumed
-        else:
-            index = start + 1
+        candidates.append((value, text[start : start + consumed].strip()))
+        index = start + consumed
 
     if not candidates:
         raise ProviderExtractionError(
@@ -160,6 +160,12 @@ def _extract_single_json_object(text: str) -> str:
         )
     if len(candidates) > 1:
         raise ProviderExtractionError(
-            "Provider response contains multiple JSON objects; expected exactly one."
+            "Provider response contains multiple JSON values; expected exactly one object."
         )
-    return candidates[0]
+
+    value, candidate = candidates[0]
+    if not isinstance(value, dict):
+        raise ProviderExtractionError(
+            "Provider response JSON must be an object, not a container around one."
+        )
+    return candidate
