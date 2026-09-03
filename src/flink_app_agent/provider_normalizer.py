@@ -21,6 +21,7 @@ Pipeline position::
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .constants import ProviderExtractionError
@@ -104,12 +105,23 @@ def normalize_provider_payload(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def _apply_aliases(raw: dict[str, Any]) -> dict[str, Any]:
-    """Map aliased keys to canonical field names."""
+    """Map aliased keys to canonical field names without hiding conflicts."""
     result: dict[str, Any] = {}
+    sources: dict[str, str] = {}
     for key, value in raw.items():
         canonical = FIELD_ALIASES.get(key, key)
-        if canonical not in result:
+        if canonical in result and (
+            isinstance(result[canonical], bool) != isinstance(value, bool)
+            or result[canonical] != value
+        ):
+            previous_key = sources[canonical]
+            raise ProviderExtractionError(
+                f"Conflicting provider fields '{previous_key}' and '{key}' "
+                f"both map to '{canonical}'."
+            )
+        if canonical not in result or key == canonical:
             result[canonical] = value
+            sources[canonical] = key
     return result
 
 
@@ -123,23 +135,36 @@ def _coerce_types(payload: dict[str, Any]) -> dict[str, Any]:
     result = dict(payload)
 
     twm = result.get("time_window_minutes")
+    if isinstance(twm, bool):
+        raise ProviderExtractionError(
+            "time_window_minutes must be an integer, got bool."
+        )
     if isinstance(twm, str):
         try:
             result["time_window_minutes"] = int(twm)
-        except ValueError:
+        except ValueError as exc:
             raise ProviderExtractionError(
                 f"time_window_minutes must be an integer, got '{twm}'."
-            )
+            ) from exc
     elif isinstance(twm, float):
-        if twm != int(twm):
+        if not math.isfinite(twm) or not twm.is_integer():
             raise ProviderExtractionError(
-                f"time_window_minutes must be a whole number, got {twm}."
+                f"time_window_minutes must be a finite whole number, got {twm}."
             )
         result["time_window_minutes"] = int(twm)
 
-    for field in ("job_family", "job_name", "source_topic", "sink_topic",
-                  "key_by", "event_time_field", "input_event_name",
-                  "output_event_name", "rule_type", "rule_condition"):
+    for field in (
+        "job_family",
+        "job_name",
+        "source_topic",
+        "sink_topic",
+        "key_by",
+        "event_time_field",
+        "input_event_name",
+        "output_event_name",
+        "rule_type",
+        "rule_condition",
+    ):
         val = result.get(field)
         if val is not None and not isinstance(val, str):
             raise ProviderExtractionError(
