@@ -182,9 +182,9 @@ def test_provider_incomplete_output_is_marked_ambiguous_under_minor_defaults() -
     )
 
 
-def test_provider_inconsistent_output_fails_quality_gate_without_fallback() -> None:
-    """Family-specific incoherence should fail the provider quality gate."""
-    def inconsistent_provider(_: str, __: str) -> str:
+def test_provider_coherent_output_ignores_incidental_rule_wording() -> None:
+    """Quality should trust normalized family/rule metadata, not condition keywords."""
+    def coherent_provider(_: str, __: str) -> str:
         return json.dumps({
             "job_family": "windowed_aggregation",
             "job_name": "sensor-events-count-job",
@@ -202,11 +202,14 @@ def test_provider_inconsistent_output_fails_quality_gate_without_fallback() -> N
     config = ExtractorConfig(
         mode="provider",
         fallback="fail",
-        call_provider=inconsistent_provider,
+        call_provider=coherent_provider,
     )
 
-    with pytest.raises(ProviderExtractionError, match="quality gate"):
-        parse_request("any request", extractor_config=config)
+    spec, outcome = parse_request("any request", extractor_config=config)
+
+    assert spec.job_family == "windowed_aggregation"
+    assert spec.rule_type == "count_by_key_window"
+    assert outcome.provider_quality == "acceptable"
 
 
 def test_provider_unusable_output_triggers_deterministic_fallback() -> None:
