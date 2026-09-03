@@ -160,7 +160,7 @@ def _extract_single_json_object(text: str) -> str:
         )
     if len(candidates) > 1:
         raise ProviderExtractionError(
-            "Provider response contains multiple JSON values; expected exactly one object."
+            "Provider response contains multiple JSON objects / multiple JSON values; expected exactly one object."
         )
 
     value, candidate = candidates[0]
