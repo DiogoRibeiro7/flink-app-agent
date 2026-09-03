@@ -83,8 +83,8 @@ def test_provider_quality_gate_rejects_missing_essential_fields() -> None:
     assert assessment.findings[0].code == "missing_essential_fields"
 
 
-def test_provider_quality_gate_rejects_family_condition_mismatch() -> None:
-    """Family-specific rule-condition mismatches should be unusable."""
+def test_provider_quality_gate_rejects_family_rule_mismatch() -> None:
+    """Normalized family/rule mismatches should be unusable."""
     assessment = ProviderPayloadQualityGate().assess(
         payload={
             "job_family": "windowed_aggregation",
@@ -95,7 +95,7 @@ def test_provider_quality_gate_rejects_family_condition_mismatch() -> None:
             "event_time_field": "event_time",
             "input_event_name": "InputEvent",
             "output_event_name": "SensorEventsCount",
-            "rule_type": "count_by_key_window",
+            "rule_type": "two_events_within_window",
             "rule_condition": "emit alerts when values spike",
             "time_window_minutes": 5,
         },
@@ -103,4 +103,4 @@ def test_provider_quality_gate_rejects_family_condition_mismatch() -> None:
     )
 
     assert assessment.category == PROVIDER_QUALITY_UNUSABLE
-    assert assessment.findings[0].code == "family_condition_mismatch"
+    assert assessment.findings[0].code == "family_rule_mismatch"

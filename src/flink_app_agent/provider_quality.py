@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .ambiguity import AmbiguityAssessment
-from .spec import JOB_FAMILY_KEYED_RULE, JOB_FAMILY_WINDOWED_AGGREGATION
+from .spec import (
+    ALLOWED_RULE_TYPE,
+    JOB_FAMILY_KEYED_RULE,
+    JOB_FAMILY_WINDOWED_AGGREGATION,
+    SESSION_WINDOW_AGGREGATION_RULE_TYPE,
+    WINDOWED_AGGREGATION_RULE_TYPE,
+)
 
 PROVIDER_QUALITY_ACCEPTABLE = "acceptable"
 PROVIDER_QUALITY_AMBIGUOUS = "ambiguous"
@@ -109,25 +115,37 @@ class ProviderPayloadQualityGate:
         self,
         payload: dict[str, object],
     ) -> ProviderQualityFinding | None:
-        """Return a quality finding when the family-specific fields disagree."""
+        """Return a quality finding when normalized family/rule metadata disagree."""
         family = payload.get("job_family")
-        rule_condition = str(payload.get("rule_condition", "")).lower()
-        if family == JOB_FAMILY_KEYED_RULE and "count" in rule_condition:
+        rule_type = payload.get("rule_type")
+        if (
+            family == JOB_FAMILY_KEYED_RULE
+            and rule_type is not None
+            and rule_type != ALLOWED_RULE_TYPE
+        ):
             return ProviderQualityFinding(
-                code="family_condition_mismatch",
+                code="family_rule_mismatch",
                 message=(
-                    "Provider output mixes keyed-rule metadata with aggregation-style "
-                    "rule wording."
+                    "Provider output declares a keyed temporal rule with an "
+                    "incompatible normalized rule type."
                 ),
-                fields=("job_family", "rule_condition"),
+                fields=("job_family", "rule_type"),
             )
-        if family == JOB_FAMILY_WINDOWED_AGGREGATION and "count" not in rule_condition:
+        if (
+            family == JOB_FAMILY_WINDOWED_AGGREGATION
+            and rule_type is not None
+            and rule_type
+            not in {
+                WINDOWED_AGGREGATION_RULE_TYPE,
+                SESSION_WINDOW_AGGREGATION_RULE_TYPE,
+            }
+        ):
             return ProviderQualityFinding(
-                code="family_condition_mismatch",
+                code="family_rule_mismatch",
                 message=(
-                    "Provider output declares a windowed aggregation but does not "
-                    "describe a count-style rule condition."
+                    "Provider output declares a windowed aggregation with an "
+                    "incompatible normalized rule type."
                 ),
-                fields=("job_family", "rule_condition"),
+                fields=("job_family", "rule_type"),
             )
         return None
