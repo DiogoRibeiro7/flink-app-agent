@@ -46,32 +46,17 @@ def _valid_aggregation_payload() -> dict:
     }
 
 
-# --- Valid structured output ---
-
-
 def test_valid_keyed_rule_payload_passes() -> None:
-    """A clean keyed rule payload should pass normalization unchanged."""
     raw = _valid_keyed_rule_payload()
-
-    result = normalize_provider_payload(raw)
-
-    assert result == raw
+    assert normalize_provider_payload(raw) == raw
 
 
 def test_valid_aggregation_payload_passes() -> None:
-    """A clean aggregation payload should pass normalization unchanged."""
     raw = _valid_aggregation_payload()
-
-    result = normalize_provider_payload(raw)
-
-    assert result == raw
-
-
-# --- Alias mapping ---
+    assert normalize_provider_payload(raw) == raw
 
 
 def test_camel_case_aliases_are_mapped() -> None:
-    """camelCase field names should be mapped to snake_case."""
     raw = {
         "jobFamily": "keyed_temporal_rule",
         "jobName": "fraud-alert-job",
@@ -85,16 +70,13 @@ def test_camel_case_aliases_are_mapped() -> None:
         "ruleCondition": "second payment within 10 minutes",
         "timeWindowMinutes": 10,
     }
-
     result = normalize_provider_payload(raw)
-
     assert result["job_family"] == "keyed_temporal_rule"
     assert result["source_topic"] == "payments"
     assert result["time_window_minutes"] == 10
 
 
 def test_hyphenated_aliases_are_mapped() -> None:
-    """Hyphenated field names should be mapped to snake_case."""
     raw = {
         "job-family": "keyed_temporal_rule",
         "job-name": "fraud-alert-job",
@@ -108,185 +90,138 @@ def test_hyphenated_aliases_are_mapped() -> None:
         "rule-condition": "second payment within 10 minutes",
         "time-window-minutes": 10,
     }
-
     result = normalize_provider_payload(raw)
-
     assert result["job_family"] == "keyed_temporal_rule"
     assert result["key_by"] == "account_id"
 
 
 def test_matching_canonical_and_alias_values_are_allowed() -> None:
-    """Duplicate canonical/alias fields with equal values should normalize safely."""
     raw = _valid_keyed_rule_payload()
     raw["sourceTopic"] = "payments"
-
     result = normalize_provider_payload(raw)
-
     assert result["source_topic"] == "payments"
 
 
 def test_conflicting_canonical_and_alias_values_fail() -> None:
-    """Conflicting aliases must not depend on provider key order."""
     raw = _valid_keyed_rule_payload()
     raw["sourceTopic"] = "other-payments"
-
     with pytest.raises(ProviderExtractionError, match="Conflicting provider fields"):
         normalize_provider_payload(raw)
 
 
-# --- Extra fields stripped ---
+def test_boolean_numeric_alias_conflict_fails() -> None:
+    """True and 1 must not be treated as equal duplicate provider values."""
+    raw = _valid_keyed_rule_payload()
+    raw["time_window_minutes"] = 1
+    raw["timeWindowMinutes"] = True
+    with pytest.raises(ProviderExtractionError, match="Conflicting provider fields"):
+        normalize_provider_payload(raw)
 
 
 def test_extra_fields_are_stripped() -> None:
-    """Provider-added explanation fields should be silently removed."""
     raw = _valid_keyed_rule_payload()
     raw["explanation"] = "I chose this because..."
     raw["confidence"] = 0.95
     raw["_internal"] = True
-
     result = normalize_provider_payload(raw)
-
     assert "explanation" not in result
     assert "confidence" not in result
     assert "_internal" not in result
     assert result["job_name"] == "fraud-alert-job"
 
 
-# --- Partial payloads preserved for ambiguity assessment ---
-
-
 def test_missing_single_field_is_preserved_for_later_assessment() -> None:
-    """A payload missing one field should remain intact for later ambiguity checks."""
     raw = _valid_keyed_rule_payload()
     del raw["source_topic"]
-
     result = normalize_provider_payload(raw)
-
     assert "source_topic" not in result
     assert result["job_family"] == "keyed_temporal_rule"
 
 
 def test_missing_multiple_fields_are_preserved_when_types_are_safe() -> None:
-    """A partial payload should still normalize aliases and known fields safely."""
     raw = {"job_name": "test-job"}
-
-    result = normalize_provider_payload(raw)
-
-    assert result == {"job_name": "test-job"}
+    assert normalize_provider_payload(raw) == {"job_name": "test-job"}
 
 
 def test_empty_payload_stays_empty() -> None:
-    """An empty payload should pass through so ambiguity can be classified later."""
     assert normalize_provider_payload({}) == {}
 
 
-# --- Type coercion ---
-
-
 def test_string_time_window_is_coerced_to_int() -> None:
-    """A string time_window_minutes should be coerced to int."""
     raw = _valid_keyed_rule_payload()
     raw["time_window_minutes"] = "10"
-
     result = normalize_provider_payload(raw)
-
     assert result["time_window_minutes"] == 10
     assert isinstance(result["time_window_minutes"], int)
 
 
 def test_float_time_window_is_coerced_to_int() -> None:
-    """A whole-number float time_window_minutes should be coerced to int."""
     raw = _valid_keyed_rule_payload()
     raw["time_window_minutes"] = 10.0
-
     result = normalize_provider_payload(raw)
-
     assert result["time_window_minutes"] == 10
     assert isinstance(result["time_window_minutes"], int)
 
 
 def test_boolean_time_window_fails() -> None:
-    """Booleans must not be accepted as integer windows."""
     raw = _valid_keyed_rule_payload()
     raw["time_window_minutes"] = True
-
     with pytest.raises(ProviderExtractionError, match="got bool"):
         normalize_provider_payload(raw)
 
 
 @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
 def test_non_finite_time_window_fails(value: float) -> None:
-    """NaN and infinities must fail deterministically before integer conversion."""
     raw = _valid_keyed_rule_payload()
     raw["time_window_minutes"] = value
-
     with pytest.raises(ProviderExtractionError, match="finite whole number"):
         normalize_provider_payload(raw)
 
 
 def test_non_whole_float_time_window_fails() -> None:
-    """A fractional float time_window_minutes should fail."""
     raw = _valid_keyed_rule_payload()
     raw["time_window_minutes"] = 10.5
-
     with pytest.raises(ProviderExtractionError, match="finite whole number"):
         normalize_provider_payload(raw)
 
 
 def test_non_numeric_string_time_window_fails() -> None:
-    """A non-numeric string time_window_minutes should fail."""
     raw = _valid_keyed_rule_payload()
     raw["time_window_minutes"] = "ten"
-
     with pytest.raises(ProviderExtractionError, match="must be an integer"):
         normalize_provider_payload(raw)
 
 
 def test_non_string_field_value_fails() -> None:
-    """A non-string value for a string field should fail."""
     raw = _valid_keyed_rule_payload()
     raw["source_topic"] = 42
-
     with pytest.raises(ProviderExtractionError, match="source_topic must be a string"):
         normalize_provider_payload(raw)
 
 
-# --- Family/rule_type coherence ---
-
-
 def test_keyed_rule_with_wrong_rule_type_fails() -> None:
-    """A keyed rule family with aggregation rule_type should fail."""
     raw = _valid_keyed_rule_payload()
     raw["rule_type"] = "count_by_key_window"
-
     with pytest.raises(ProviderExtractionError, match="Incoherent"):
         normalize_provider_payload(raw)
 
 
 def test_aggregation_with_wrong_rule_type_fails() -> None:
-    """An aggregation family with keyed rule_type should fail."""
     raw = _valid_aggregation_payload()
     raw["rule_type"] = "two_events_within_window"
-
     with pytest.raises(ProviderExtractionError, match="Incoherent"):
         normalize_provider_payload(raw)
 
 
 def test_keyed_rule_with_correct_rule_type_passes() -> None:
-    """A keyed rule family with matching rule_type should pass."""
     raw = _valid_keyed_rule_payload()
-
     result = normalize_provider_payload(raw)
-
     assert result["job_family"] == "keyed_temporal_rule"
     assert result["rule_type"] == "two_events_within_window"
 
 
 def test_aggregation_with_correct_rule_type_passes() -> None:
-    """An aggregation family with matching rule_type should pass."""
     raw = _valid_aggregation_payload()
-
     result = normalize_provider_payload(raw)
-
     assert result["job_family"] == "windowed_aggregation"
     assert result["rule_type"] == "count_by_key_window"
