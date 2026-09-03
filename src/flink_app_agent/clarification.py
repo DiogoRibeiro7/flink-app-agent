@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .ambiguity import AmbiguityAssessment
-from .spec import JOB_FAMILY_KEYED_RULE, JOB_FAMILY_WINDOWED_AGGREGATION
+from .spec import (
+    JOB_FAMILY_KEYED_RULE,
+    JOB_FAMILY_WINDOWED_AGGREGATION,
+    SESSION_WINDOW_AGGREGATION_RULE_TYPE,
+)
 
 
 @dataclass(frozen=True)
@@ -101,9 +105,13 @@ def _question_for_issue(
         )
 
     if issue_code == "vague_temporal_language":
+        if payload.get("rule_type") == SESSION_WINDOW_AGGREGATION_RULE_TYPE:
+            wording = "What session inactivity gap should be used, in minutes?"
+        else:
+            wording = "What explicit time window should be used, in minutes?"
         return ClarificationQuestion(
             code=issue_code,
-            question="What explicit time window should be used, in minutes?",
+            question=wording,
             fields=("time_window_minutes",),
         )
 
