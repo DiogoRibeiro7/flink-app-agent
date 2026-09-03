@@ -82,8 +82,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--extractor",
         choices=["deterministic", "provider"],
-        default="deterministic",
-        help="Extraction strategy: 'deterministic' (default) or 'provider'.",
+        default=None,
+        help="Extraction strategy: 'deterministic' or 'provider'.",
     )
     parser.add_argument(
         "--fallback",

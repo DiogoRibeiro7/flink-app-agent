@@ -245,9 +245,10 @@ def _load_provider_callable() -> ProviderCallable:
 
     try:
         module = importlib.import_module(module_path)
-    except ImportError as exc:
+    except Exception as exc:
         raise ConfigurationError(
-            f"Cannot import provider module '{module_path}': {exc}"
+            f"Cannot import provider module '{module_path}' for entry point "
+            f"'{entry_point}': {exc}"
         ) from exc
 
     fn = getattr(module, function_name, None)
