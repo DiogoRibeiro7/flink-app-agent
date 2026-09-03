@@ -14,8 +14,8 @@ from flink_app_agent.llm import ProviderExtractionError
 from flink_app_agent.provider_adapter import (
     Message,
     ProviderAdapter,
-    build_provider_callable,
     _strip_markdown_fences,
+    build_provider_callable,
 )
 
 
@@ -53,11 +53,7 @@ class FailingClient:
         raise ConnectionError("provider unreachable")
 
 
-# --- Message construction ---
-
-
 def test_build_messages_creates_system_and_user_pair() -> None:
-    """The adapter should build a system message from the prompt and a user message from the request."""
     client = FakeClient(json.dumps(VALID_SPEC_PAYLOAD))
     adapter = ProviderAdapter(client=client)
 
@@ -71,7 +67,6 @@ def test_build_messages_creates_system_and_user_pair() -> None:
 
 
 def test_call_passes_messages_to_client() -> None:
-    """The adapter should pass constructed messages to the client."""
     client = FakeClient(json.dumps(VALID_SPEC_PAYLOAD))
     adapter = ProviderAdapter(client=client)
 
@@ -82,13 +77,8 @@ def test_call_passes_messages_to_client() -> None:
     assert client.received_messages[1].content == "the request"
 
 
-# --- Response parsing ---
-
-
 def test_parse_response_accepts_plain_json() -> None:
-    """Plain JSON should parse successfully."""
-    client = FakeClient("")
-    adapter = ProviderAdapter(client=client)
+    adapter = ProviderAdapter(client=FakeClient(""))
 
     result = adapter.parse_response(json.dumps(VALID_SPEC_PAYLOAD))
 
@@ -96,10 +86,8 @@ def test_parse_response_accepts_plain_json() -> None:
 
 
 def test_parse_response_strips_markdown_json_fence() -> None:
-    """JSON wrapped in ```json fences should be extracted."""
     wrapped = f"Here is the result:\n```json\n{json.dumps(VALID_SPEC_PAYLOAD)}\n```\nDone."
-    client = FakeClient("")
-    adapter = ProviderAdapter(client=client)
+    adapter = ProviderAdapter(client=FakeClient(""))
 
     result = adapter.parse_response(wrapped)
 
@@ -107,39 +95,54 @@ def test_parse_response_strips_markdown_json_fence() -> None:
 
 
 def test_parse_response_strips_plain_markdown_fence() -> None:
-    """JSON wrapped in plain ``` fences should be extracted."""
     wrapped = f"```\n{json.dumps(VALID_SPEC_PAYLOAD)}\n```"
-    client = FakeClient("")
-    adapter = ProviderAdapter(client=client)
+    adapter = ProviderAdapter(client=FakeClient(""))
 
     result = adapter.parse_response(wrapped)
 
     assert json.loads(result) == VALID_SPEC_PAYLOAD
 
 
+def test_parse_response_extracts_json_from_surrounding_prose() -> None:
+    wrapped = f"Here is the requested spec: {json.dumps(VALID_SPEC_PAYLOAD)} Hope this helps."
+    adapter = ProviderAdapter(client=FakeClient(""))
+
+    result = adapter.parse_response(wrapped)
+
+    assert json.loads(result) == VALID_SPEC_PAYLOAD
+
+
+def test_parse_response_handles_nested_json_object() -> None:
+    payload = {"outer": {"inner": 1}}
+    adapter = ProviderAdapter(client=FakeClient(""))
+
+    result = adapter.parse_response(f"Result: {json.dumps(payload)}")
+
+    assert json.loads(result) == payload
+
+
+def test_parse_response_rejects_multiple_json_objects() -> None:
+    adapter = ProviderAdapter(client=FakeClient(""))
+
+    with pytest.raises(ProviderExtractionError, match="multiple JSON objects"):
+        adapter.parse_response('{"a":1} and then {"b":2}')
+
+
 def test_parse_response_rejects_non_json() -> None:
-    """Non-JSON responses should fail clearly."""
-    client = FakeClient("")
-    adapter = ProviderAdapter(client=client)
+    adapter = ProviderAdapter(client=FakeClient(""))
 
     with pytest.raises(ProviderExtractionError, match="Could not extract valid JSON"):
         adapter.parse_response("I don't know how to do that.")
 
 
 def test_parse_response_rejects_empty_response() -> None:
-    """Empty responses should fail clearly."""
-    client = FakeClient("")
-    adapter = ProviderAdapter(client=client)
+    adapter = ProviderAdapter(client=FakeClient(""))
 
     with pytest.raises(ProviderExtractionError, match="Could not extract valid JSON"):
         adapter.parse_response("")
 
 
-# --- Full call flow ---
-
-
 def test_call_returns_clean_json_from_provider() -> None:
-    """A full call should return parseable JSON matching the provider response."""
     payload_json = json.dumps(VALID_SPEC_PAYLOAD)
     client = FakeClient(payload_json)
     adapter = ProviderAdapter(client=client)
@@ -150,7 +153,6 @@ def test_call_returns_clean_json_from_provider() -> None:
 
 
 def test_call_handles_markdown_wrapped_response() -> None:
-    """A full call with markdown-wrapped response should still return clean JSON."""
     wrapped = f"```json\n{json.dumps(VALID_SPEC_PAYLOAD)}\n```"
     client = FakeClient(wrapped)
     adapter = ProviderAdapter(client=client)
@@ -161,7 +163,6 @@ def test_call_handles_markdown_wrapped_response() -> None:
 
 
 def test_call_wraps_client_exceptions() -> None:
-    """Client exceptions should be wrapped in ProviderExtractionError."""
     adapter = ProviderAdapter(client=FailingClient())
 
     with pytest.raises(ProviderExtractionError, match="Provider client call failed"):
@@ -169,7 +170,6 @@ def test_call_wraps_client_exceptions() -> None:
 
 
 def test_call_fails_on_invalid_client_response() -> None:
-    """A client returning non-JSON should fail at the parsing stage."""
     client = FakeClient("not json at all")
     adapter = ProviderAdapter(client=client)
 
@@ -177,11 +177,7 @@ def test_call_fails_on_invalid_client_response() -> None:
         adapter.call("request", "prompt")
 
 
-# --- build_provider_callable ---
-
-
 def test_build_provider_callable_returns_callable() -> None:
-    """The helper should return a ProviderCallable from a client."""
     client = FakeClient(json.dumps(VALID_SPEC_PAYLOAD))
 
     fn = build_provider_callable(client)
@@ -191,25 +187,18 @@ def test_build_provider_callable_returns_callable() -> None:
     assert json.loads(result) == VALID_SPEC_PAYLOAD
 
 
-# --- Markdown fence stripping ---
-
-
 def test_strip_markdown_fences_with_json_tag() -> None:
-    """```json fences should be stripped."""
     assert _strip_markdown_fences('```json\n{"a":1}\n```') == '{"a":1}'
 
 
 def test_strip_markdown_fences_with_no_tag() -> None:
-    """Plain ``` fences should be stripped."""
     assert _strip_markdown_fences('```\n{"a":1}\n```') == '{"a":1}'
 
 
 def test_strip_markdown_fences_passthrough() -> None:
-    """Text without fences should pass through unchanged."""
     assert _strip_markdown_fences('{"a":1}') == '{"a":1}'
 
 
 def test_strip_markdown_fences_with_surrounding_text() -> None:
-    """Fences with surrounding explanation should extract only the fenced content."""
     text = 'Here you go:\n```json\n{"a":1}\n```\nHope that helps!'
     assert _strip_markdown_fences(text) == '{"a":1}'

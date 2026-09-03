@@ -98,23 +98,15 @@ class ProviderAdapter:
         ]
 
     def parse_response(self, raw_response: str) -> str:
-        """Extract a clean JSON string from the provider's raw response.
+        """Extract exactly one JSON object from the provider response.
 
-        Provider responses often wrap JSON in markdown code fences or
-        include surrounding explanation text. This method strips common
-        wrappers and validates that the result is parseable JSON.
+        Provider responses may wrap JSON in markdown fences or surround it
+        with explanatory prose. Parsing is JSON-aware rather than based on a
+        greedy brace regular expression, so nested objects remain intact.
+        Multiple top-level JSON values are rejected as ambiguous output.
         """
-        cleaned = _strip_markdown_fences(raw_response)
-        cleaned = cleaned.strip()
-
-        try:
-            json.loads(cleaned)
-        except (json.JSONDecodeError, TypeError) as exc:
-            raise ProviderExtractionError(
-                f"Could not extract valid JSON from provider response: {exc}"
-            ) from exc
-
-        return cleaned
+        cleaned = _strip_markdown_fences(raw_response).strip()
+        return _extract_single_json_object(cleaned)
 
 
 def build_provider_callable(client: ProviderClient) -> ProviderCallable:
@@ -139,3 +131,41 @@ def _strip_markdown_fences(text: str) -> str:
     if match:
         return match.group(1).strip()
     return text
+
+
+def _extract_single_json_object(text: str) -> str:
+    """Return the only top-level JSON object embedded in ``text``."""
+    decoder = json.JSONDecoder()
+    candidates: list[tuple[object, str]] = []
+    index = 0
+
+    while index < len(text):
+        object_start = text.find("{", index)
+        array_start = text.find("[", index)
+        starts = [start for start in (object_start, array_start) if start >= 0]
+        if not starts:
+            break
+        start = min(starts)
+        try:
+            value, consumed = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            index = start + 1
+            continue
+        candidates.append((value, text[start : start + consumed].strip()))
+        index = start + consumed
+
+    if not candidates:
+        raise ProviderExtractionError(
+            "Could not extract valid JSON object from provider response."
+        )
+    if len(candidates) > 1:
+        raise ProviderExtractionError(
+            "Provider response contains multiple JSON objects / multiple JSON values; expected exactly one object."
+        )
+
+    value, candidate = candidates[0]
+    if not isinstance(value, dict):
+        raise ProviderExtractionError(
+            "Provider response JSON must be an object, not a container around one."
+        )
+    return candidate
