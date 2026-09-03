@@ -46,9 +46,13 @@ final class JobTemplate {
                         .map({{INPUT_EVENT_NAME}}::fromRaw)
                         .assignTimestampsAndWatermarks(buildWatermarkStrategy());
 
-        // 3. Key the stream and apply the generated keyed rule logic.
+        // 3. Reject records without the configured key before keyed state is created.
+        DataStream<{{INPUT_EVENT_NAME}}> keyedCandidates =
+                inputEvents.filter(event -> !event.getField("{{KEY_BY}}").isBlank());
+
+        // 4. Key the stream and apply the generated keyed rule logic.
         DataStream<{{OUTPUT_EVENT_NAME}}> outputEvents =
-                inputEvents
+                keyedCandidates
                         .keyBy(event -> event.getField("{{KEY_BY}}"))
                         .process(new RuleProcessFunction(
                                 "{{RULE_TYPE}}",
@@ -56,7 +60,7 @@ final class JobTemplate {
                                 "{{EVENT_TIME_FIELD}}",
                                 {{TIME_WINDOW_MINUTES}}L));
 
-        // 4. Serialize the generated output event and write it back to Kafka.
+        // 5. Serialize the generated output event and write it back to Kafka.
         outputEvents
                 .map({{OUTPUT_EVENT_NAME}}::toJson)
                 .sinkTo(sink);
