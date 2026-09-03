@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -114,6 +115,25 @@ def test_hyphenated_aliases_are_mapped() -> None:
     assert result["key_by"] == "account_id"
 
 
+def test_matching_canonical_and_alias_values_are_allowed() -> None:
+    """Duplicate canonical/alias fields with equal values should normalize safely."""
+    raw = _valid_keyed_rule_payload()
+    raw["sourceTopic"] = "payments"
+
+    result = normalize_provider_payload(raw)
+
+    assert result["source_topic"] == "payments"
+
+
+def test_conflicting_canonical_and_alias_values_fail() -> None:
+    """Conflicting aliases must not depend on provider key order."""
+    raw = _valid_keyed_rule_payload()
+    raw["sourceTopic"] = "other-payments"
+
+    with pytest.raises(ProviderExtractionError, match="Conflicting provider fields"):
+        normalize_provider_payload(raw)
+
+
 # --- Extra fields stripped ---
 
 
@@ -185,12 +205,31 @@ def test_float_time_window_is_coerced_to_int() -> None:
     assert isinstance(result["time_window_minutes"], int)
 
 
+def test_boolean_time_window_fails() -> None:
+    """Booleans must not be accepted as integer windows."""
+    raw = _valid_keyed_rule_payload()
+    raw["time_window_minutes"] = True
+
+    with pytest.raises(ProviderExtractionError, match="got bool"):
+        normalize_provider_payload(raw)
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+def test_non_finite_time_window_fails(value: float) -> None:
+    """NaN and infinities must fail deterministically before integer conversion."""
+    raw = _valid_keyed_rule_payload()
+    raw["time_window_minutes"] = value
+
+    with pytest.raises(ProviderExtractionError, match="finite whole number"):
+        normalize_provider_payload(raw)
+
+
 def test_non_whole_float_time_window_fails() -> None:
     """A fractional float time_window_minutes should fail."""
     raw = _valid_keyed_rule_payload()
     raw["time_window_minutes"] = 10.5
 
-    with pytest.raises(ProviderExtractionError, match="whole number"):
+    with pytest.raises(ProviderExtractionError, match="finite whole number"):
         normalize_provider_payload(raw)
 
 
