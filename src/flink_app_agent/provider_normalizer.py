@@ -110,7 +110,10 @@ def _apply_aliases(raw: dict[str, Any]) -> dict[str, Any]:
     sources: dict[str, str] = {}
     for key, value in raw.items():
         canonical = FIELD_ALIASES.get(key, key)
-        if canonical in result and result[canonical] != value:
+        if canonical in result and (
+            isinstance(result[canonical], bool) != isinstance(value, bool)
+            or result[canonical] != value
+        ):
             previous_key = sources[canonical]
             raise ProviderExtractionError(
                 f"Conflicting provider fields '{previous_key}' and '{key}' "
