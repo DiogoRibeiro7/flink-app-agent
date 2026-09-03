@@ -60,8 +60,9 @@ public class RuleProcessFunction
             return;
         }
 
-        if (eventTime - firstSeen <= windowMillis()) {
-            // 2. A second matching event arrived inside the configured window. Emit output here.
+        long delta = eventTime - firstSeen;
+        if (delta >= 0L && delta <= windowMillis()) {
+            // 2. A later second event arrived inside the configured window. Emit output here.
             out.collect(new {{OUTPUT_EVENT_NAME}}(
                     ctx.getCurrentKey(),
                     ruleType,
@@ -69,9 +70,11 @@ public class RuleProcessFunction
                     eventTime));
         }
 
-        // 3. Keep the latest event as the active candidate and move the cleanup timer forward.
-        firstSeenEventTime.update(eventTime);
-        ctx.timerService().registerEventTimeTimer(eventTime + windowMillis());
+        if (eventTime >= firstSeen) {
+            // 3. Only move the active candidate forward; late earlier events cannot rewind state.
+            firstSeenEventTime.update(eventTime);
+            ctx.timerService().registerEventTimeTimer(eventTime + windowMillis());
+        }
     }
 
     @Override
