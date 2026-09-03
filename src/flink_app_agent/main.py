@@ -234,9 +234,7 @@ def parse_request(
             ),
             policy=policy,
         )
-    except AmbiguousRequestError:
-        raise
-    except (ProviderExtractionError, Exception) as exc:
+    except Exception as exc:
         if config.fallback != "deterministic":
             raise
         error_type = type(exc).__name__
