@@ -97,6 +97,9 @@ public class RuleProcessFunction
     }
 
     private long windowMillis() {
+        if (timeWindowMinutes > Long.MAX_VALUE / 60_000L) {
+            return Long.MAX_VALUE;
+        }
         return timeWindowMinutes * 60_000L;
     }
 }
