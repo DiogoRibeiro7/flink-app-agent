@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import ValidationError
 import pytest
+from pydantic import ValidationError
 
 from flink_app_agent.spec import FlinkJobSpec, MAX_TIME_WINDOW_MINUTES
 
