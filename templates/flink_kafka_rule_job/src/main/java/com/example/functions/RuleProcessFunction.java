@@ -56,12 +56,12 @@ public class RuleProcessFunction
         if (firstSeen == null) {
             // 1. No prior candidate for this key. Store event-time state and register cleanup.
             firstSeenEventTime.update(eventTime);
-            ctx.timerService().registerEventTimeTimer(eventTime + windowMillis());
+            ctx.timerService().registerEventTimeTimer(windowEnd(eventTime));
             return;
         }
 
-        if (eventTime - firstSeen <= windowMillis()) {
-            // 2. A second matching event arrived inside the configured window. Emit output here.
+        if (eventTime >= firstSeen && eventTime <= windowEnd(firstSeen)) {
+            // 2. A later second event arrived inside the configured window. Emit output here.
             out.collect(new {{OUTPUT_EVENT_NAME}}(
                     ctx.getCurrentKey(),
                     ruleType,
@@ -69,9 +69,11 @@ public class RuleProcessFunction
                     eventTime));
         }
 
-        // 3. Keep the latest event as the active candidate and move the cleanup timer forward.
-        firstSeenEventTime.update(eventTime);
-        ctx.timerService().registerEventTimeTimer(eventTime + windowMillis());
+        if (eventTime >= firstSeen) {
+            // 3. Only move the active candidate forward; late earlier events cannot rewind state.
+            firstSeenEventTime.update(eventTime);
+            ctx.timerService().registerEventTimeTimer(windowEnd(eventTime));
+        }
     }
 
     @Override
@@ -80,13 +82,24 @@ public class RuleProcessFunction
             KeyedProcessFunction<String, {{INPUT_EVENT_NAME}}, {{OUTPUT_EVENT_NAME}}>.OnTimerContext ctx,
             Collector<{{OUTPUT_EVENT_NAME}}> out) throws Exception {
         Long firstSeen = firstSeenEventTime.value();
-        if (firstSeen != null && firstSeen + windowMillis() <= timestamp) {
+        if (firstSeen != null && windowEnd(firstSeen) <= timestamp) {
             // Event-time cleanup logic belongs here. Stale keyed state is cleared on timer firing.
             firstSeenEventTime.clear();
         }
     }
 
+    private long windowEnd(long start) {
+        long window = windowMillis();
+        if (start > Long.MAX_VALUE - window) {
+            return Long.MAX_VALUE;
+        }
+        return start + window;
+    }
+
     private long windowMillis() {
+        if (timeWindowMinutes > Long.MAX_VALUE / 60_000L) {
+            return Long.MAX_VALUE;
+        }
         return timeWindowMinutes * 60_000L;
     }
 }
