@@ -5,7 +5,14 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 
 FILESYSTEM_SAFE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -17,6 +24,9 @@ SESSION_WINDOW_AGGREGATION_RULE_TYPE = "count_by_key_session_window"
 
 JOB_FAMILY_KEYED_RULE = "keyed_temporal_rule"
 JOB_FAMILY_WINDOWED_AGGREGATION = "windowed_aggregation"
+
+JAVA_LONG_MAX = 9_223_372_036_854_775_807
+MAX_TIME_WINDOW_MINUTES = JAVA_LONG_MAX // 60_000
 
 
 class FlinkJobSpec(BaseModel):
@@ -43,7 +53,11 @@ class FlinkJobSpec(BaseModel):
     output_event_name: str = Field(description="Output event class name.")
     rule_type: str = Field(description="Supported rule type for the current template path.")
     rule_condition: str = Field(description="Human-readable rule condition.")
-    time_window_minutes: int = Field(gt=0, description="Positive time window length.")
+    time_window_minutes: int = Field(
+        gt=0,
+        le=MAX_TIME_WINDOW_MINUTES,
+        description="Positive time window length that fits Java milliseconds.",
+    )
 
     @field_validator("job_name")
     @classmethod
@@ -112,7 +126,9 @@ class FlinkJobSpec(BaseModel):
     def validate_distinct_event_class_names(self) -> "FlinkJobSpec":
         """Require input and output model classes to remain distinct after normalization."""
         if self.input_event_name == self.output_event_name:
-            raise ValueError("input_event_name and output_event_name must be different Java class names.")
+            raise ValueError(
+                "input_event_name and output_event_name must be different Java class names."
+            )
         return self
 
     @classmethod
