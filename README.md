@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/project-logo.png" alt="flink-app-agent project logo" width="160" height="160">
+</p>
+
 # flink-app-agent
 
 `flink-app-agent` is a small internal-style CLI that turns a narrow plain-English Flink job request into:
